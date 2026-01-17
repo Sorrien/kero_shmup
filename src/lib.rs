@@ -36,6 +36,7 @@ impl Camera {
 pub struct PlayerAnimComponent {
     run_index: usize,
     is_crouching: bool,
+    is_jumping: bool,
     flip_x: bool,
     run_frame_time: f32,
     run_frame_time_acc: f32,
@@ -47,6 +48,7 @@ impl PlayerAnimComponent {
         Self {
             run_index: 0,
             is_crouching: false,
+            is_jumping: false,
             flip_x: false,
             run_frame_time: 0.1,
             run_frame_time_acc: 0.0,
@@ -355,7 +357,7 @@ impl Game for Shmup {
             }
         }
 
-        let jump_height = 60.;
+        let jump_height = 200.;
         let walk_speed = 2.0;
 
         for (player, character_controller) in self
@@ -366,13 +368,23 @@ impl Game for Shmup {
                 //println!("jump pressed");
 
                 if character_controller.is_grounded {
-                    //println!("grounded");
-                    player.desired_velocity.y = -self.physics_data.gravity.y
-                        * (2.0 * jump_height / self.physics_data.gravity.y).sqrt();
+                    player.desired_velocity.y = -self.physics_data.gravity.y * 1.3;
+
+                    /*  player.desired_velocity.y = -self.physics_data.gravity.y
+                     * (2.0 * jump_height / self.physics_data.gravity.y).sqrt();  */
                 }
             } else {
-                player.desired_velocity.y = 0.;
+                player.desired_velocity.y -= -self.physics_data.gravity.y * ctx.dt();
             }
+            /* else {
+            if player.desired_velocity.y > 0. {
+            //player.desired_velocity.y -= -self.physics_data.gravity.y * ctx.dt();
+            }
+            else {
+            player.desired_velocity.y = 0.;
+            }
+            //player.desired_velocity.y = 0.;
+            } */
 
             let mut desired_velocity = player.desired_velocity;
 
@@ -501,6 +513,11 @@ impl Game for Shmup {
 
             let mut animation_x = 0;
 
+            if !character_controller.is_grounded {
+                player_anim.is_jumping = true;
+            } else {
+                player_anim.is_jumping = false;
+            }
             if self.down_button.pressed() {
                 player_anim.is_crouching = true;
             } else if self.down_button.released() {
@@ -512,13 +529,19 @@ impl Game for Shmup {
                     inc_wrap_index(player_anim.aim_angle_index as usize, 48) as u32;
             }
 
-            if lin_vel.x.abs() > 0. {
+            if lin_vel.x.abs() > 0. && !player_anim.is_jumping {
                 player_anim.run_frame_time_acc += ctx.dt();
                 if player_anim.run_frame_time_acc > player_anim.run_frame_time {
                     player_anim.run_index = inc_wrap_index(player_anim.run_index, 4);
                     player_anim.run_frame_time_acc = 0.;
                 }
                 animation_x = player_anim.run_index + 2;
+            } else {
+                player_anim.run_index = 0;
+
+                if player_anim.is_crouching || player_anim.is_jumping {
+                    animation_x = 1;
+                }
             }
             if lin_vel.x > 0. {
                 //player_anim.run_index = inc_wrap_index(player_anim.run_index, 4);
@@ -529,13 +552,6 @@ impl Game for Shmup {
                 //player_anim.flip_x = true;
                 //animation_x = player_anim.run_index + 2;
                 player_anim.flip_x = true;
-            } else {
-                player_anim.run_index = 0;
-
-                //not running
-                if player_anim.is_crouching {
-                    animation_x = 1;
-                }
             }
 
             let animation_y = player_anim.aim_angle_index * 46;
