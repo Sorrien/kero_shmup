@@ -48,6 +48,7 @@ pub struct PlayerAnimComponent {
     run_frame_time: f32,
     run_frame_time_acc: f32,
     aim_angle_index: u32,
+    is_muzzle_flashing: bool,
 }
 
 impl PlayerAnimComponent {
@@ -60,6 +61,7 @@ impl PlayerAnimComponent {
             run_frame_time: 0.1,
             run_frame_time_acc: 0.0,
             aim_angle_index: 0,
+            is_muzzle_flashing: false,
         }
     }
 }
@@ -81,6 +83,11 @@ pub struct Shmup {
     _aim_left_button: VirtualButton,
     jump_button: VirtualButton,
     camera: Camera,
+    player_weapon_flash_texture: Texture,
+    fire_button: VirtualButton,
+    right_stick: VirtualStick,
+    controller_switch_button: VirtualButton,
+    use_controller: bool,
 }
 
 impl Game for Shmup {
@@ -274,6 +281,14 @@ impl Game for Shmup {
 
         let jump_button = VirtualButton::new(&src, Key::Space, GamepadButton::South);
 
+        let fire_button = VirtualButton::new(&src, Key::F, GamepadButton::RightTrigger);
+
+        let right_stick = VirtualStick::new(
+            &src,
+            VirtualAxis::new(&src, GamepadAxis::RightX, None, None),
+            VirtualAxis::new(&src, GamepadAxis::RightY, None, None),
+        );
+
         let character_body = RigidBodyBuilder::kinematic_position_based().translation(
             rapier2d::math::Vec2::new(player_start.x, player_start.y - PLAYER_HEIGHT - 2.),
         );
@@ -296,6 +311,11 @@ impl Game for Shmup {
             .load_png_from_file("assets/char-sheet-alpha.png", true)
             .unwrap();
 
+        let player_weapon_flash_texture = ctx
+            .graphics
+            .load_png_from_file("assets/weaponflash-sheet-colour-1-alpha.png", true)
+            .unwrap();
+
         let zoom_amount = 1.;
 
         let scale = zoom_amount * 2.0 * ctx.window.scale_factor();
@@ -315,6 +335,10 @@ impl Game for Shmup {
             _aim_left_button: aim_left_button,
             aim_right_button,
             jump_button,
+            fire_button,
+            controller_switch_button: VirtualButton::new(&src, Key::O, None),
+            use_controller: false,
+            right_stick,
             player_entity,
             player_texture,
             camera: Camera::new(
@@ -323,6 +347,7 @@ impl Game for Shmup {
                 window_size.y,
                 1.,
             ),
+            player_weapon_flash_texture,
         })
     }
 
@@ -334,6 +359,10 @@ impl Game for Shmup {
         self.camera.height = window_size.y;
 
         let mouse_world_pos = to_logical_f(ctx.mouse.pos(), scale) + self.camera.position;
+
+        if self.controller_switch_button.pressed() {
+            self.use_controller = !self.use_controller;
+        }
 
         if self.spawn_btn.pressed() {
             let rigid_body = RigidBodyBuilder::dynamic()
@@ -366,6 +395,32 @@ impl Game for Shmup {
                 player.desired_velocity.x = -1.0;
             } else if self.left_button.released() {
                 player.desired_velocity.x = 0.0;
+            }
+
+            if self.fire_button.down() || ctx.mouse.left_down() {
+                player.wants_to_shoot = true;
+            } else {
+                player.wants_to_shoot = false;
+            }
+
+            if player.wants_to_shoot {}
+
+            if player.is_shooting && player.time_since_shot_start >= player.time_per_shot {
+                player.is_shooting = false;
+            } else if player.is_shooting {
+                player.time_since_shot_start += ctx.dt();
+            }
+
+            if player.time_since_last_shot >= player.shot_delay_time
+                && player.wants_to_shoot
+                && !player.is_shooting
+            {
+                player.time_since_last_shot = 0.;
+                player.time_since_shot_start = 0.;
+                player.is_shooting = true;
+                //spawn projectile here
+            } else if !player.is_shooting {
+                player.time_since_last_shot += ctx.dt();
             }
         }
 
@@ -418,15 +473,24 @@ impl Game for Shmup {
             self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
             self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.; // + self.camera.height as f32;
 
-            let body_pos = body.position().translation;
-            let body_pos = Vec2F::new(body_pos.x, body_pos.y);
-            let diff = mouse_world_pos - body_pos; //mouse_pos - body_pos;
-            let mut angle = f32::atan2(diff.y, diff.x);
-            //angle += f32::PI * 0.25;
-            if angle < 0. {
-                angle += f32::PI * 2.;
+            if self.use_controller {
+                let diff = Vec2F::new(self.right_stick.x(), self.right_stick.y()); //mouse_pos - body_pos;
+                let mut angle = f32::atan2(diff.y, diff.x);
+                if angle < 0. {
+                    angle += f32::PI * 2.;
+                }
+                player.aim_angle = angle * (180. / f32::PI);
+            } else {
+                let body_pos = body.position().translation;
+                let body_pos = Vec2F::new(body_pos.x, body_pos.y);
+                let diff = mouse_world_pos - body_pos; //mouse_pos - body_pos;
+                let mut angle = f32::atan2(diff.y, diff.x);
+                //angle += f32::PI * 0.25;
+                if angle < 0. {
+                    angle += f32::PI * 2.;
+                }
+                player.aim_angle = angle * (180. / f32::PI);
             }
-            player.aim_angle = angle * (180. / f32::PI);
             //println!("mouse pos: {} body pos: {}", mouse_world_pos, body_pos);
             //println!("aim angle: {}", player.aim_angle);
         }
@@ -535,6 +599,8 @@ impl Game for Shmup {
 
             let mut animation_x = 0;
 
+            player_anim.is_muzzle_flashing = player.is_shooting;
+
             if !character_controller.is_grounded {
                 player_anim.is_jumping = true;
             } else {
@@ -599,7 +665,27 @@ impl Game for Shmup {
                 Vec2::new(player_anim.flip_x, false),
             );
 
-            let rect_center = Vec2F::new(translation.x, translation.y - PLAYER_HEIGHT / 2.0)
+            if player_anim.is_muzzle_flashing {
+                let sub_weapon_flash = self.player_weapon_flash_texture.sub(rect(
+                    animation_x as u32 * 46,
+                    player_anim.aim_angle_index * 54,
+                    46,
+                    54,
+                ));
+
+                draw.subtexture_at_flipped(
+                    sub_weapon_flash,
+                    Vec2F::new(
+                        translation.x - 24.,
+                        translation.y - 46. + PLAYER_HEIGHT / 2.0,
+                    ) - self.camera.position,
+                    Rgba8::WHITE,
+                    ColorMode::MULT,
+                    Vec2::new(player_anim.flip_x, false),
+                );
+            }
+
+            /*             let rect_center = Vec2F::new(translation.x, translation.y - PLAYER_HEIGHT / 2.0)
                 - self.camera.position;
             draw.rect_outline(
                 rect(rect_center.x, rect_center.y, PLAYER_WIDTH, PLAYER_HEIGHT),
@@ -613,7 +699,7 @@ impl Game for Shmup {
                 ),
                 Rgba8::GREEN,
                 None,
-            );
+            ); */
         }
 
         draw.circle(

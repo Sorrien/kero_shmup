@@ -608,6 +608,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "fey_color"
+version = "0.1.1"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "approx",
+ "bytemuck",
+ "fey_math",
+ "serde",
+]
+
+[[package]]
+name = "fey_font"
+version = "0.1.1"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "ab_glyph",
+ "fey_color",
+ "fey_grid",
+ "fey_img",
+ "fey_math",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "fey_grid"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "fey_math",
+]
+
+[[package]]
+name = "fey_guid"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "rand",
+ "serde",
+ "uuid",
+]
+
+[[package]]
+name = "fey_img"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "bytemuck",
+ "fey_color",
+ "fey_grid",
+ "fey_math",
+ "png",
+ "qoi",
+ "serde",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "fey_math"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "approx",
+ "bytemuck",
+ "dpi",
+ "serde",
+]
+
+[[package]]
+name = "fey_packer"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "fey_math",
+]
+
+[[package]]
+name = "fey_rand"
+version = "0.1.0"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
+dependencies = [
+ "fey_math",
+ "rand",
+ "rand_core",
+ "serde",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1095,24 +1182,25 @@ dependencies = [
 
 [[package]]
 name = "kero"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
+version = "0.1.11"
+source = "git+https://github.com/feyworks/kero#dde71b3f8406356f06c2cf91a49daa2c89362493"
 dependencies = [
  "arrayvec",
  "bytemuck",
  "compact_str",
  "directories",
  "dpi",
+ "env_logger",
+ "fey_color",
+ "fey_font",
+ "fey_grid",
+ "fey_guid",
+ "fey_img",
+ "fey_math",
+ "fey_packer",
+ "fey_rand",
  "fnv",
  "gilrs",
- "kero_color",
- "kero_font",
- "kero_grid",
- "kero_guid",
- "kero_img",
- "kero_math",
- "kero_packer",
- "kero_rand",
  "naga",
  "pollster",
  "serde",
@@ -1121,93 +1209,6 @@ dependencies = [
  "thiserror 2.0.17",
  "wgpu",
  "winit",
-]
-
-[[package]]
-name = "kero_color"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "approx",
- "bytemuck",
- "kero_math",
- "serde",
-]
-
-[[package]]
-name = "kero_font"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "ab_glyph",
- "kero_color",
- "kero_grid",
- "kero_img",
- "kero_math",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "kero_grid"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "kero_math",
-]
-
-[[package]]
-name = "kero_guid"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "rand",
- "serde",
- "uuid",
-]
-
-[[package]]
-name = "kero_img"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "bytemuck",
- "kero_color",
- "kero_grid",
- "kero_math",
- "png",
- "qoi",
- "serde",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "kero_math"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "approx",
- "bytemuck",
- "dpi",
- "serde",
-]
-
-[[package]]
-name = "kero_packer"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "kero_math",
-]
-
-[[package]]
-name = "kero_rand"
-version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#0a048edd6d33d1be7abaa957fa7c45f3f03c243f"
-dependencies = [
- "kero_math",
- "rand",
- "rand_core",
- "serde",
 ]
 
 [[package]]
