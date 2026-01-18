@@ -15,15 +15,22 @@ pub mod ldtk_json;
 pub mod physics;
 pub mod player;
 
+const PLAYER_HEIGHT: f32 = 36.0;
+const PLAYER_WIDTH: f32 = 2.0;
+
+pub fn to_logical_f(pos: Vec2F, scale: f32) -> Vec2F {
+    pos / scale
+}
+
 pub struct Camera {
     pub position: Vec2F,
-    pub width: u32,
-    pub height: u32,
+    pub width: f32,
+    pub height: f32,
     pub zoom_amount: f32,
 }
 
 impl Camera {
-    pub fn new(position: Vec2F, width: u32, height: u32, zoom_amount: f32) -> Self {
+    pub fn new(position: Vec2F, width: f32, height: f32, zoom_amount: f32) -> Self {
         Self {
             position,
             width,
@@ -267,14 +274,12 @@ impl Game for Shmup {
 
         let jump_button = VirtualButton::new(&src, Key::Space, GamepadButton::South);
 
-        let character_height = 15.0;
-
         let character_body = RigidBodyBuilder::kinematic_position_based().translation(
-            rapier2d::math::Vec2::new(player_start.x, player_start.y - character_height - 2.),
+            rapier2d::math::Vec2::new(player_start.x, player_start.y - PLAYER_HEIGHT - 2.),
         );
         let character_body = physics_data.rigid_body_set.insert(character_body);
 
-        let character_collider = ColliderBuilder::capsule_y(character_height / 2., 1.0);
+        let character_collider = ColliderBuilder::capsule_y(PLAYER_HEIGHT / 2., PLAYER_WIDTH / 2.);
         let character_collider = physics_data.collider_set.insert_with_parent(
             character_collider,
             character_body,
@@ -291,7 +296,11 @@ impl Game for Shmup {
             .load_png_from_file("assets/char-sheet-alpha.png", true)
             .unwrap();
 
-        let window_size = ctx.window.size();
+        let zoom_amount = 1.;
+
+        let scale = zoom_amount * 2.0 * ctx.window.scale_factor();
+        let window_size = to_logical_f(ctx.window.size().to_f32(), scale);
+
         Ok(Self {
             tilesets,
             grids,
@@ -318,10 +327,13 @@ impl Game for Shmup {
     }
 
     fn update(&mut self, ctx: &Context) -> Result<(), GameError> {
-        let window_size = ctx.window.size();
+        // perform your game logic here
+        let scale = self.camera.zoom_amount * 2.0 * ctx.window.scale_factor();
+        let window_size = to_logical_f(ctx.window.size().to_f32(), scale);
         self.camera.width = window_size.x;
         self.camera.height = window_size.y;
-        // perform your game logic here
+
+        let mouse_world_pos = to_logical_f(ctx.mouse.pos(), scale) + self.camera.position;
 
         if self.spawn_btn.pressed() {
             let rigid_body = RigidBodyBuilder::dynamic()
@@ -357,7 +369,7 @@ impl Game for Shmup {
             }
         }
 
-        let jump_height = 200.;
+        let _jump_height = 200.;
         let walk_speed = 2.0;
 
         for (player, character_controller) in self
@@ -403,11 +415,20 @@ impl Game for Shmup {
 
             //self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width as f32 / 2.;
             //self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height as f32 / 2.;
-            let scale = self.camera.zoom_amount * 2.0 * ctx.window.scale_factor();
-            self.camera.position.x =
-                translation.x + 24.0 / 2.0 - self.camera.width as f32 / scale / 2.;
-            self.camera.position.y =
-                translation.y + 32.0 / 2.0 - self.camera.height as f32 / scale / 2.; // + self.camera.height as f32;
+            self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
+            self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.; // + self.camera.height as f32;
+
+            let body_pos = body.position().translation;
+            let body_pos = Vec2F::new(body_pos.x, body_pos.y);
+            let diff = mouse_world_pos - body_pos; //mouse_pos - body_pos;
+            let mut angle = f32::atan2(diff.y, diff.x);
+            //angle += f32::PI * 0.25;
+            if angle < 0. {
+                angle += f32::PI * 2.;
+            }
+            player.aim_angle = angle * (180. / f32::PI);
+            //println!("mouse pos: {} body pos: {}", mouse_world_pos, body_pos);
+            //println!("aim angle: {}", player.aim_angle);
         }
 
         step(&mut self.physics_data);
@@ -498,10 +519,11 @@ impl Game for Shmup {
             );
         }
 
-        for (player_anim, character_controller) in self
-            .world
-            .query_mut::<(&mut PlayerAnimComponent, &CharacterControllerComponent)>()
-        {
+        for (player_anim, player, character_controller) in self.world.query_mut::<(
+            &mut PlayerAnimComponent,
+            &PlayerComponent,
+            &CharacterControllerComponent,
+        )>() {
             let body = &self.physics_data.rigid_body_set[character_controller.character_body];
             let translation = body.translation();
             /*             draw.circle(
@@ -522,11 +544,6 @@ impl Game for Shmup {
                 player_anim.is_crouching = true;
             } else if self.down_button.released() {
                 player_anim.is_crouching = false;
-            }
-
-            if self.aim_right_button.pressed() {
-                player_anim.aim_angle_index =
-                    inc_wrap_index(player_anim.aim_angle_index as usize, 48) as u32;
             }
 
             if lin_vel.x.abs() > 0. && !player_anim.is_jumping {
@@ -554,6 +571,17 @@ impl Game for Shmup {
                 player_anim.flip_x = true;
             }
 
+            let aim_angle = if player_anim.flip_x {
+                let x = 180.0 - player.aim_angle; //(player.aim_angle - 360.0).abs()
+                let x = if x < 0. { 360. + x } else { x };
+                360.0 - x
+            } else {
+                360.0 - player.aim_angle
+            };
+            let quadrant_size = 360.0 / 47.0;
+            let quadrant_index = (aim_angle / quadrant_size).ceil() as u32;
+            player_anim.aim_angle_index = quadrant_index;
+
             let animation_y = player_anim.aim_angle_index * 46;
 
             let sub = self
@@ -562,12 +590,37 @@ impl Game for Shmup {
 
             draw.subtexture_at_flipped(
                 sub,
-                Vec2F::new(translation.x - 46., translation.y - 46.) - self.camera.position,
+                Vec2F::new(
+                    translation.x - 24.,
+                    translation.y - 46. + PLAYER_HEIGHT / 2.0,
+                ) - self.camera.position,
                 Rgba8::WHITE,
                 ColorMode::MULT,
                 Vec2::new(player_anim.flip_x, false),
             );
+
+            let rect_center = Vec2F::new(translation.x, translation.y - PLAYER_HEIGHT / 2.0)
+                - self.camera.position;
+            draw.rect_outline(
+                rect(rect_center.x, rect_center.y, PLAYER_WIDTH, PLAYER_HEIGHT),
+                Rgba::GREEN,
+            );
+
+            draw.circle(
+                circle(
+                    Vec2F::new(translation.x, translation.y) - self.camera.position,
+                    5.,
+                ),
+                Rgba8::GREEN,
+                None,
+            );
         }
+
+        draw.circle(
+            circle(to_logical_f(ctx.mouse.pos(), scale), 5.),
+            Rgba8::RED,
+            None,
+        );
 
         /*         draw.circle(circle(Vec2F::new(0., 0.), 5.), Rgba8::GREEN, None);
 
