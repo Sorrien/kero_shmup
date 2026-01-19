@@ -18,7 +18,10 @@ pub mod physics;
 pub mod player;
 
 const PLAYER_HEIGHT: f32 = 36.0;
-const PLAYER_WIDTH: f32 = 2.0;
+const PLAYER_WIDTH: f32 = 14.0;
+
+const TEST_ENEMY_HEIGHT: f32 = 20.;
+const TEST_ENEMY_WIDTH: f32 = 24.;
 
 const TERRAIN_GROUP: Group = Group::GROUP_1;
 const PLAYER_GROUP: Group = Group::GROUP_2;
@@ -36,6 +39,7 @@ pub struct RaycastProjectile {
     pub solid: bool,
     pub life_time: f32,
     pub max_life_time: f32,
+    pub penetrate: bool,
 }
 
 pub struct HealthComponent {
@@ -51,8 +55,10 @@ pub struct EnemyOwned {
 
 pub struct ProjectileImpact {
     pub hit_entity_id: u32,
-    proj_entity: Entity,
+    pub _proj_entity: Entity,
 }
+
+pub struct EnemyComponent {}
 
 pub struct Camera {
     pub position: Vec2F,
@@ -111,8 +117,6 @@ pub struct Shmup {
     player_entity: hecs::Entity,
     player_texture: Texture,
     down_button: VirtualButton,
-    aim_right_button: VirtualButton,
-    _aim_left_button: VirtualButton,
     jump_button: VirtualButton,
     camera: Camera,
     player_weapon_flash_texture: Texture,
@@ -121,6 +125,7 @@ pub struct Shmup {
     controller_switch_button: VirtualButton,
     use_controller: bool,
     player_projectile_texture: Texture,
+    enemies_sheet_1_texture: Texture,
 }
 
 impl Game for Shmup {
@@ -276,14 +281,61 @@ impl Game for Shmup {
                     }
 
                     for entity_instance in layer.entity_instances {
-                        if entity_instance.identifier == "Player" {
-                            player_start = Some(
-                                grid_pos
+                        match entity_instance.identifier.as_str() {
+                            "Player" => {
+                                player_start = Some(
+                                    grid_pos
+                                        + Vec2F::new(
+                                            entity_instance.px[0] as f32,
+                                            entity_instance.px[1] as f32,
+                                        ),
+                                );
+                            }
+                            "Mob" => {
+                                let pos = grid_pos
                                     + Vec2F::new(
                                         entity_instance.px[0] as f32,
                                         entity_instance.px[1] as f32,
+                                    );
+
+                                let character_body = RigidBodyBuilder::kinematic_position_based()
+                                    .translation(rapier2d::math::Vec2::new(
+                                        pos.x,
+                                        pos.y - TEST_ENEMY_HEIGHT - 2.,
+                                    ));
+                                let character_body =
+                                    physics_data.rigid_body_set.insert(character_body);
+
+                                let character_collider = ColliderBuilder::capsule_y(
+                                    TEST_ENEMY_HEIGHT / 2.,
+                                    TEST_ENEMY_WIDTH / 2.,
+                                )
+                                .collision_groups(InteractionGroups::new(
+                                    ENEMY_GROUP,
+                                    TERRAIN_GROUP | PLAYER_GROUP | PLAYER_PROJECTILE_GROUP,
+                                    rapier2d::prelude::InteractionTestMode::Or,
+                                ));
+                                let character_collider =
+                                    physics_data.collider_set.insert_with_parent(
+                                        character_collider,
+                                        character_body,
+                                        &mut physics_data.rigid_body_set,
+                                    );
+                                let entity = world.spawn((
+                                    CharacterControllerComponent::new(
+                                        character_body,
+                                        character_collider,
                                     ),
-                            );
+                                    EnemyComponent {},
+                                    HealthComponent { health: 100.0 },
+                                ));
+                                physics_data
+                                    .collider_set
+                                    .get_mut(character_collider)
+                                    .unwrap()
+                                    .user_data = entity.id() as u128;
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -369,6 +421,11 @@ impl Game for Shmup {
             .load_png_from_file("assets/projectiles-sheet-alpha.png", true)
             .unwrap();
 
+        let enemies_sheet_1_texture = ctx
+            .graphics
+            .load_png_from_file("assets/enemies-sheet-alpha.png", true)
+            .unwrap();
+
         let zoom_amount = 1.;
 
         let scale = zoom_amount * 2.0 * ctx.window.scale_factor();
@@ -385,8 +442,6 @@ impl Game for Shmup {
             left_button,
             right_button,
             down_button,
-            _aim_left_button: aim_left_button,
-            aim_right_button,
             jump_button,
             fire_button,
             controller_switch_button: VirtualButton::new(&src, Key::O, None),
@@ -402,6 +457,7 @@ impl Game for Shmup {
             ),
             player_weapon_flash_texture,
             player_projectile_texture,
+            enemies_sheet_1_texture,
         })
     }
 
@@ -481,7 +537,7 @@ impl Game for Shmup {
                     self.physics_data.rigid_body_set[character.character_body].translation();
                 let body_translation = Vec2F::new(body_translation.x, body_translation.y);
 
-                let bullet_spawn_dist = 10.0;
+                let bullet_spawn_dist = 15.0;
                 let bullet_speed = 1.0;
                 let bullet_pos = body_translation + (player.aim_dir * bullet_spawn_dist);
                 let bullet_vel = player.aim_dir * bullet_speed;
@@ -506,6 +562,7 @@ impl Game for Shmup {
                         solid: true,
                         life_time: 0.0,
                         max_life_time: 5.0,
+                        penetrate: false,
                     },
                     PlayerOwned {
                         owner: player_entity,
@@ -616,6 +673,7 @@ impl Game for Shmup {
             self.world
                 .query_mut::<(Entity, &mut RaycastProjectile, &PlayerOwned)>()
         {
+            let mut hit = false;
             let direction = raycast_projectile.velocity.norm();
             if let Some((handle, toi)) = query_pipeline.cast_ray(
                 &Ray::new(
@@ -629,18 +687,19 @@ impl Game for Shmup {
                 raycast_projectile.solid,
             ) {
                 let hit_collider = &self.physics_data.collider_set[handle];
-                if hit_collider.user_data != 0 {
-                    projectile_impacts.push(ProjectileImpact {
-                        hit_entity_id: hit_collider.user_data as u32,
-                        proj_entity: entity,
-                    });
-                }
+                projectile_impacts.push(ProjectileImpact {
+                    hit_entity_id: hit_collider.user_data as u32,
+                    _proj_entity: entity,
+                });
+                hit = true;
             }
 
             raycast_projectile.position += raycast_projectile.velocity;
 
             raycast_projectile.life_time += ctx.dt();
-            if raycast_projectile.life_time >= raycast_projectile.max_life_time {
+            if raycast_projectile.life_time >= raycast_projectile.max_life_time
+                || (hit && !raycast_projectile.penetrate)
+            {
                 to_despawn.push(entity);
             }
         }
@@ -650,10 +709,30 @@ impl Game for Shmup {
                 self.world
                     .find_entity_from_id(projectile_impact.hit_entity_id)
             };
-            self.world.despawn(hit_entity).unwrap();
+            to_despawn.push(hit_entity);
         }
 
         for entity in to_despawn {
+            if let Ok(character_controller) = self
+                .world
+                .query_one_mut::<&CharacterControllerComponent>(entity)
+            {
+                self.physics_data.rigid_body_set.remove(
+                    character_controller.character_body,
+                    &mut self.physics_data.island_manager,
+                    &mut self.physics_data.collider_set,
+                    &mut self.physics_data.impulse_joint_set,
+                    &mut self.physics_data.multibody_joint_set,
+                    true,
+                );
+                /*                 self.physics_data.collider_set.remove(
+                    character_controller.character_collider,
+                    &mut self.physics_data.island_manager,
+                    &mut self.physics_data.rigid_body_set,
+                    true,
+                ); */
+            }
+
             self.world.despawn(entity).unwrap();
         }
 
@@ -885,8 +964,10 @@ impl Game for Shmup {
                 );
             }
 
-            /*             let rect_center = Vec2F::new(translation.x, translation.y - PLAYER_HEIGHT / 2.0)
-                - self.camera.position;
+            let rect_center = Vec2F::new(
+                translation.x - PLAYER_WIDTH / 2.0,
+                translation.y - PLAYER_HEIGHT / 2.0,
+            ) - self.camera.position;
             draw.rect_outline(
                 rect(rect_center.x, rect_center.y, PLAYER_WIDTH, PLAYER_HEIGHT),
                 Rgba::GREEN,
@@ -899,7 +980,42 @@ impl Game for Shmup {
                 ),
                 Rgba8::GREEN,
                 None,
-            ); */
+            );
+        }
+
+        for (_, character_controller) in self
+            .world
+            .query_mut::<(&EnemyComponent, &CharacterControllerComponent)>()
+        {
+            let body = &self.physics_data.rigid_body_set[character_controller.character_body];
+            let translation = body.translation();
+
+            let rect_center = Vec2F::new(
+                translation.x - TEST_ENEMY_WIDTH / 2.0,
+                translation.y - TEST_ENEMY_HEIGHT / 2.0,
+            ) - self.camera.position;
+            draw.rect_outline(
+                rect(
+                    rect_center.x,
+                    rect_center.y,
+                    TEST_ENEMY_WIDTH,
+                    TEST_ENEMY_HEIGHT,
+                ),
+                Rgba::RED,
+            );
+
+            let sub = self.enemies_sheet_1_texture.sub(rect(0, 58, 20, 24));
+
+            draw.subtexture_at_flipped(
+                sub,
+                Vec2F::new(
+                    translation.x - 10.,
+                    translation.y - 24. + TEST_ENEMY_HEIGHT / 2.0,
+                ) - self.camera.position,
+                Rgba8::WHITE,
+                ColorMode::MULT,
+                Vec2::new(false, false),
+            );
         }
 
         draw.circle(
