@@ -6,9 +6,11 @@ use crate::{
     physics::{CharacterControllerComponent, PhysicsData, step},
     player::PlayerComponent,
 };
-use hecs::World;
+use hecs::{Entity, World};
 use kero::{grid::Grid, prelude::*};
-use rapier2d::prelude::{ColliderBuilder, RigidBodyBuilder, RigidBodyHandle};
+use rapier2d::prelude::{
+    ColliderBuilder, Group, InteractionGroups, QueryFilter, Ray, RigidBodyBuilder, RigidBodyHandle,
+};
 
 pub mod ldtk;
 pub mod ldtk_json;
@@ -18,8 +20,38 @@ pub mod player;
 const PLAYER_HEIGHT: f32 = 36.0;
 const PLAYER_WIDTH: f32 = 2.0;
 
+const TERRAIN_GROUP: Group = Group::GROUP_1;
+const PLAYER_GROUP: Group = Group::GROUP_2;
+const ENEMY_GROUP: Group = Group::GROUP_3;
+const PLAYER_PROJECTILE_GROUP: Group = Group::GROUP_4;
+const ENEMY_PROJECTILE_GROUP: Group = Group::GROUP_5;
+
 pub fn to_logical_f(pos: Vec2F, scale: f32) -> Vec2F {
     pos / scale
+}
+
+pub struct RaycastProjectile {
+    pub position: Vec2F,
+    pub velocity: Vec2F,
+    pub solid: bool,
+    pub life_time: f32,
+    pub max_life_time: f32,
+}
+
+pub struct HealthComponent {
+    pub health: f32,
+}
+
+pub struct PlayerOwned {
+    pub owner: Entity,
+}
+pub struct EnemyOwned {
+    pub owner: Entity,
+}
+
+pub struct ProjectileImpact {
+    pub hit_entity_id: u32,
+    proj_entity: Entity,
 }
 
 pub struct Camera {
@@ -88,6 +120,7 @@ pub struct Shmup {
     right_stick: VirtualStick,
     controller_switch_button: VirtualButton,
     use_controller: bool,
+    player_projectile_texture: Texture,
 }
 
 impl Game for Shmup {
@@ -203,6 +236,11 @@ impl Game for Shmup {
                                             .translation(rapier2d::math::Vector2::new(
                                                 translation.x,
                                                 translation.y,
+                                            ))
+                                            .collision_groups(InteractionGroups::new(
+                                                TERRAIN_GROUP,
+                                                PLAYER_GROUP | ENEMY_GROUP,
+                                                rapier2d::prelude::InteractionTestMode::And,
                                             ));
                                             /*                                             voxels.push(rapier2d::math::Vector2::new(
                                                 translation.x as f32,
@@ -294,7 +332,12 @@ impl Game for Shmup {
         );
         let character_body = physics_data.rigid_body_set.insert(character_body);
 
-        let character_collider = ColliderBuilder::capsule_y(PLAYER_HEIGHT / 2., PLAYER_WIDTH / 2.);
+        let character_collider = ColliderBuilder::capsule_y(PLAYER_HEIGHT / 2., PLAYER_WIDTH / 2.)
+            .collision_groups(InteractionGroups::new(
+                PLAYER_GROUP,
+                TERRAIN_GROUP | ENEMY_GROUP | ENEMY_PROJECTILE_GROUP,
+                rapier2d::prelude::InteractionTestMode::Or,
+            ));
         let character_collider = physics_data.collider_set.insert_with_parent(
             character_collider,
             character_body,
@@ -305,6 +348,11 @@ impl Game for Shmup {
             CharacterControllerComponent::new(character_body, character_collider),
             PlayerAnimComponent::new(),
         ));
+        physics_data
+            .collider_set
+            .get_mut(character_collider)
+            .unwrap()
+            .user_data = player_entity.id() as u128;
 
         let player_texture = ctx
             .graphics
@@ -314,6 +362,11 @@ impl Game for Shmup {
         let player_weapon_flash_texture = ctx
             .graphics
             .load_png_from_file("assets/weaponflash-sheet-colour-1-alpha.png", true)
+            .unwrap();
+
+        let player_projectile_texture = ctx
+            .graphics
+            .load_png_from_file("assets/projectiles-sheet-alpha.png", true)
             .unwrap();
 
         let zoom_amount = 1.;
@@ -348,6 +401,7 @@ impl Game for Shmup {
                 1.,
             ),
             player_weapon_flash_texture,
+            player_projectile_texture,
         })
     }
 
@@ -382,9 +436,11 @@ impl Game for Shmup {
             self.balls.push(ball_body_handle);
         }
 
-        if let Ok(player) = self
-            .world
-            .query_one_mut::<&mut PlayerComponent>(self.player_entity)
+        if let Ok((player_entity, player, character)) =
+            self.world
+                .query_one_mut::<(Entity, &mut PlayerComponent, &CharacterControllerComponent)>(
+                    self.player_entity,
+                )
         {
             if self.right_button.pressed() {
                 player.desired_velocity.x = 1.0;
@@ -418,7 +474,43 @@ impl Game for Shmup {
                 player.time_since_last_shot = 0.;
                 player.time_since_shot_start = 0.;
                 player.is_shooting = true;
+
                 //spawn projectile here
+
+                let body_translation =
+                    self.physics_data.rigid_body_set[character.character_body].translation();
+                let body_translation = Vec2F::new(body_translation.x, body_translation.y);
+
+                let bullet_spawn_dist = 10.0;
+                let bullet_speed = 1.0;
+                let bullet_pos = body_translation + (player.aim_dir * bullet_spawn_dist);
+                let bullet_vel = player.aim_dir * bullet_speed;
+
+                /*                 let rigid_body = RigidBodyBuilder::dynamic()
+                    .translation(rapier2d::math::Vector2::new(bullet_pos.x, bullet_pos.y))
+                    .linvel(rapier2d::math::Vec2::new(bullet_vel.x, bullet_vel.y))
+                    .build();
+                let collider = ColliderBuilder::ball(5.).restitution(0.7).build();
+                let ball_body_handle = self.physics_data.rigid_body_set.insert(rigid_body);
+                self.physics_data.collider_set.insert_with_parent(
+                    collider,
+                    ball_body_handle,
+                    &mut self.physics_data.rigid_body_set,
+                );
+
+                self.balls.push(ball_body_handle); */
+                self.world.spawn((
+                    RaycastProjectile {
+                        position: bullet_pos,
+                        velocity: bullet_vel,
+                        solid: true,
+                        life_time: 0.0,
+                        max_life_time: 5.0,
+                    },
+                    PlayerOwned {
+                        owner: player_entity,
+                    },
+                ));
             } else if !player.is_shooting {
                 player.time_since_last_shot += ctx.dt();
             }
@@ -480,6 +572,7 @@ impl Game for Shmup {
                     angle += f32::PI * 2.;
                 }
                 player.aim_angle = angle * (180. / f32::PI);
+                player.aim_dir = diff.norm();
             } else {
                 let body_pos = body.position().translation;
                 let body_pos = Vec2F::new(body_pos.x, body_pos.y);
@@ -490,6 +583,7 @@ impl Game for Shmup {
                     angle += f32::PI * 2.;
                 }
                 player.aim_angle = angle * (180. / f32::PI);
+                player.aim_dir = diff.norm();
             }
             //println!("mouse pos: {} body pos: {}", mouse_world_pos, body_pos);
             //println!("aim angle: {}", player.aim_angle);
@@ -499,6 +593,68 @@ impl Game for Shmup {
 
         for character_controller in self.world.query_mut::<&mut CharacterControllerComponent>() {
             character_controller.update_character_controller(ctx.dt(), &mut self.physics_data);
+        }
+
+        let player_proj_filter = QueryFilter::new().groups(InteractionGroups::new(
+            PLAYER_PROJECTILE_GROUP,
+            ENEMY_GROUP,
+            rapier2d::prelude::InteractionTestMode::And,
+        ));
+
+        let query_pipeline = self.physics_data.broad_phase.as_query_pipeline(
+            self.physics_data.narrow_phase.query_dispatcher(),
+            &self.physics_data.rigid_body_set,
+            &self.physics_data.collider_set,
+            player_proj_filter,
+        );
+
+        let mut projectile_impacts = Vec::new();
+
+        let mut to_despawn = Vec::new();
+
+        for (entity, raycast_projectile, _) in
+            self.world
+                .query_mut::<(Entity, &mut RaycastProjectile, &PlayerOwned)>()
+        {
+            let direction = raycast_projectile.velocity.norm();
+            if let Some((handle, toi)) = query_pipeline.cast_ray(
+                &Ray::new(
+                    rapier2d::math::Vec2::new(
+                        raycast_projectile.position.x,
+                        raycast_projectile.position.y,
+                    ),
+                    rapier2d::math::Vec2::new(direction.x, direction.y),
+                ),
+                raycast_projectile.velocity.len(),
+                raycast_projectile.solid,
+            ) {
+                let hit_collider = &self.physics_data.collider_set[handle];
+                if hit_collider.user_data != 0 {
+                    projectile_impacts.push(ProjectileImpact {
+                        hit_entity_id: hit_collider.user_data as u32,
+                        proj_entity: entity,
+                    });
+                }
+            }
+
+            raycast_projectile.position += raycast_projectile.velocity;
+
+            raycast_projectile.life_time += ctx.dt();
+            if raycast_projectile.life_time >= raycast_projectile.max_life_time {
+                to_despawn.push(entity);
+            }
+        }
+
+        for projectile_impact in projectile_impacts {
+            let hit_entity = unsafe {
+                self.world
+                    .find_entity_from_id(projectile_impact.hit_entity_id)
+            };
+            self.world.despawn(hit_entity).unwrap();
+        }
+
+        for entity in to_despawn {
+            self.world.despawn(entity).unwrap();
         }
 
         Ok(())
@@ -580,6 +736,50 @@ impl Game for Shmup {
                 ),
                 Rgba8::BLACK,
                 None,
+            );
+        }
+
+        for projectile in self.world.query_mut::<&RaycastProjectile>() {
+            let flip_x = projectile.velocity.x < 0.;
+            let flip_y = projectile.velocity.y > 0.;
+
+            let diff = projectile.velocity.norm();
+            Vec2F::new(self.right_stick.x(), self.right_stick.y());
+            let mut angle = f32::atan2(diff.y, diff.x);
+            if angle < 0. {
+                angle += f32::PI * 2.;
+            }
+            angle = angle * (180. / f32::PI);
+
+            let aim_angle = if flip_x {
+                let x = 180.0 - angle;
+                let x = if x < 0. { 360. + x } else { x };
+                360.0 - x
+            } else {
+                360.0 - angle
+            };
+
+            let four_quad_size = 360.0 / 4.0;
+            let quadrant = (aim_angle / four_quad_size).floor();
+
+            let aim_angle = aim_angle - (quadrant) * 90.0;
+
+            let aim_angle = if flip_y { 90.0 - aim_angle } else { aim_angle };
+
+            let quadrant_size = 90.0 / 12.0;
+            let quadrant_index = (aim_angle / quadrant_size).ceil() as u32;
+
+            let sub =
+                self.player_projectile_texture
+                    .sub(rect(quadrant_index as u32 * 18, 0, 18, 18));
+
+            draw.subtexture_at_flipped(
+                sub,
+                Vec2F::new(projectile.position.x - 18., projectile.position.y - 18.)
+                    - self.camera.position,
+                Rgba8::WHITE,
+                ColorMode::MULT,
+                Vec2::new(flip_x, flip_y),
             );
         }
 
