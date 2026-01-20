@@ -168,6 +168,7 @@ impl Game for Shmup {
     where
         Self: Sized,
     {
+        // initialize your game state here, such as creating graphics resources, etc.
         let mut tilesets = HashMap::new();
         let mut grids = Vec::new();
         let mut physics_data = PhysicsData::new();
@@ -201,7 +202,6 @@ impl Game for Shmup {
 
         let enemies_sheet_1_texture_id = sprite_resources.insert(enemies_sheet_1_texture);
 
-        // initialize your game state here, such as creating graphics resources, etc.
         let mut level_file =
             File::open("assets/levels/PlatformerTest.ldtk").expect("failed to open ldtk file");
         let mut serialized_level = String::new();
@@ -260,6 +260,7 @@ impl Game for Shmup {
                         let tiles = layer.auto_layer_tiles;
                         let mut colliders = Vec::new();
                         if layer.identifier == "Collisions" {
+                            let mut vert_slices: HashMap<i64, Vec<i64>> = HashMap::new();
                             let tile_set = tilesets.get(&layer.tileset_def_uid.unwrap()).unwrap();
                             let size = tile_set.grid_size as f32 / 2.;
                             for tile in &tiles {
@@ -267,6 +268,17 @@ impl Game for Shmup {
                                     match tile_type {
                                         TileType::None => (),
                                         TileType::Collider => {
+                                            let tile_x = tile.px[0];
+                                            let tile_y = tile.px[1];
+                                            if vert_slices.contains_key(&tile_y) {
+                                                if let Some(slice) = vert_slices.get_mut(&tile_y) {
+                                                    slice.push(tile_x);
+                                                }
+                                            } else {
+                                                let slice = vec![tile_x];
+                                                vert_slices.insert(tile_y, slice);
+                                            }
+
                                             let translation = grid_pos
                                                 + Vec2F::new(tile.px[0] as f32, tile.px[1] as f32);
 
@@ -292,7 +304,7 @@ impl Game for Shmup {
                                                                                            );
                                                                                        }
                                             */
-                                            let radius = 0.2;
+                                            /*  let radius = 0.2;
                                             let collider = ColliderBuilder::round_cuboid(
                                                 size - radius,
                                                 size - radius,
@@ -306,15 +318,51 @@ impl Game for Shmup {
                                                 TERRAIN_GROUP,
                                                 PLAYER_GROUP | ENEMY_GROUP,
                                                 rapier2d::prelude::InteractionTestMode::And,
-                                            ));
+                                            )); */
                                             /*                                             voxels.push(rapier2d::math::Vector2::new(
                                                 translation.x as f32,
                                                 translation.y as f32,
                                             )); */
 
-                                            colliders
-                                                .push(physics_data.collider_set.insert(collider));
+                                            /* colliders
+                                            .push(physics_data.collider_set.insert(collider)); */
                                         }
+                                    }
+                                }
+                            }
+
+                            for (y, slice) in &mut vert_slices {
+                                slice.sort();
+                                let mut start_index = 0;
+                                for i in 1..slice.len() {
+                                    let x = slice[i];
+                                    let x_2 = slice[i - 1];
+                                    if (x - x_2).abs() > tile_set.grid_size || i == slice.len() - 1
+                                    {
+                                        /* let length = x as f32 + size - slice[start_index] as f32 + size;
+                                        let half_length = length / 2.0 / 2.0; */
+                                        let length =
+                                            (i - start_index) as f32 * tile_set.grid_size as f32;
+                                        let half_length = length / 2.0;
+
+                                        let radius = 0.2;
+                                        let collider = ColliderBuilder::round_cuboid(
+                                            half_length - radius,
+                                            size - radius,
+                                            radius,
+                                        )
+                                        .translation(rapier2d::math::Vector2::new(
+                                            grid_pos.x + slice[start_index] as f32 + half_length,
+                                            grid_pos.y + *y as f32 + size,
+                                        ))
+                                        .collision_groups(InteractionGroups::new(
+                                            TERRAIN_GROUP,
+                                            PLAYER_GROUP | ENEMY_GROUP,
+                                            rapier2d::prelude::InteractionTestMode::And,
+                                        ));
+
+                                        colliders.push(physics_data.collider_set.insert(collider));
+                                        start_index = i;
                                     }
                                 }
                             }
