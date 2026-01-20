@@ -10,6 +10,7 @@ pub struct PlayerComponent {
     pub time_since_shot_start: f32,
     pub time_per_shot: f32,
     pub aim_dir: Vec2F,
+    pub wants_to_jump: bool,
 }
 
 impl PlayerComponent {
@@ -24,6 +25,7 @@ impl PlayerComponent {
             time_per_shot: 0.1,
             is_shooting: false,
             aim_dir: Vec2F::ZERO,
+            wants_to_jump: false,
         }
     }
 }
