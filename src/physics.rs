@@ -76,6 +76,7 @@ pub struct CharacterControllerComponent {
     pub desired_movement: Vec2F,
     pub is_grounded: bool,
     pub is_sliding_down_slope: bool,
+    pub prev_position: Vec2F,
 }
 
 impl CharacterControllerComponent {
@@ -90,6 +91,7 @@ impl CharacterControllerComponent {
             desired_movement: Vec2F::ZERO,
             is_grounded: false,
             is_sliding_down_slope: false,
+            prev_position: Vec2F::ZERO,
         }
     }
 
@@ -172,6 +174,7 @@ impl CharacterControllerComponent {
             .unwrap();
         let position = character_body.position();
 
+        self.prev_position = Vec2F::new(position.translation.x, position.translation.y);
         character_body.set_next_kinematic_translation(position.translation + mvt.translation);
     }
 }
