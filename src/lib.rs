@@ -530,9 +530,9 @@ impl Game for Shmup {
         //update inputs
         if let Ok((player)) = self
             .world
-            .query_one_mut::<(&mut PlayerComponent)>(self.player_entity)
+            .query_one_mut::<&mut PlayerComponent>(self.player_entity)
         {
-            if self.right_button.pressed() {
+            /*             if self.right_button.pressed() {
                 player.desired_velocity.x = 1.0;
             } else if self.right_button.released() {
                 player.desired_velocity.x = 0.0;
@@ -541,7 +541,16 @@ impl Game for Shmup {
                 player.desired_velocity.x = -1.0;
             } else if self.left_button.released() {
                 player.desired_velocity.x = 0.0;
+            } */
+
+            let mut x = 0.0;
+            if self.right_button.down() {
+                x += 1.0;
             }
+            if self.left_button.down() {
+                x -= 1.0;
+            }
+            player.desired_velocity.x = x;
 
             if self.fire_button.down() || ctx.mouse.left_down() {
                 player.wants_to_shoot = true;
