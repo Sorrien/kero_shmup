@@ -30,6 +30,8 @@ const ENEMY_GROUP: Group = Group::GROUP_3;
 const PLAYER_PROJECTILE_GROUP: Group = Group::GROUP_4;
 const ENEMY_PROJECTILE_GROUP: Group = Group::GROUP_5;
 
+const PHYSICS_DT: f32 = 1.0 / 60.0;
+
 pub fn to_logical_f(pos: Vec2F, scale: f32) -> Vec2F {
     pos / scale
 }
@@ -571,7 +573,7 @@ impl Game for Shmup {
 
         self.time_since_last_phys_update += ctx.dt();
 
-        let min_physics_time = 1. / 60.;
+        let min_physics_time = PHYSICS_DT;
         while self.time_since_last_phys_update >= min_physics_time {
             let dt = min_physics_time;
             // perform your game logic here
@@ -917,6 +919,7 @@ impl Game for Shmup {
                 //draw.subtexture_at(sub, pos);
             }
         }
+        let alpha = self.time_since_last_phys_update / PHYSICS_DT;
 
         for ball in &self.balls {
             let ball_body = &self.physics_data.rigid_body_set[*ball];
@@ -975,7 +978,6 @@ impl Game for Shmup {
                 Vec2::new(flip_x, flip_y),
             );
         }
-
         for (player_anim, player, character_controller) in self.world.query_mut::<(
             &mut PlayerAnimComponent,
             &PlayerComponent,
@@ -983,6 +985,9 @@ impl Game for Shmup {
         )>() {
             let body = &self.physics_data.rigid_body_set[character_controller.character_body];
             let translation = body.translation();
+            let translation = Vec2F::new(translation.x, translation.y);
+            let translation =
+                translation * alpha + character_controller.prev_position * (1.0 - alpha);
             /*             draw.circle(
                 circle(Vec2F::new(translation.x, translation.y), 5.),
                 Rgba8::RED,
