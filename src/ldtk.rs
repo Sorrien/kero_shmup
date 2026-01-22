@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use kero::{gfx::{SubTexture, Texture}, grid::GridBuf, math::Vec2F};
+use kero::{gfx::{SubTexture, Surface, Texture}, grid::GridBuf, math::Vec2F};
 use rapier2d::prelude::ColliderHandle;
 
 use crate::ldtk_json::{TileInstance};
@@ -14,6 +14,8 @@ pub struct TileGrid {
     pub tiles: Vec<TileInstance>,
     pub opacity: f64,
     pub colliders: Vec<ColliderHandle>,
+    pub surface: Surface,
+    pub rendered: bool,
 }
 pub struct Tileset {
     pub tiles: GridBuf<SubTexture>,

@@ -135,20 +135,20 @@ impl CharacterControllerComponent {
             |c| collisions.push(c),
         );
 
-/*         for collision in &collisions {
-            let collider = &physics_data.collider_set[collision.handle];
-            if collider.parent().is_none() {
-                let normal = collision.hit.normal1;
+        /*         for collision in &collisions {
+                   let collider = &physics_data.collider_set[collision.handle];
+                   if collider.parent().is_none() {
+                       let normal = collision.hit.normal1;
 
-                let normal_dot_velocity = normal.dot(character_body.linvel().normalize());
-                let velocity_magnitude = character_body.linvel().length() * last_step;
-                let length_along_normal = velocity_magnitude * f32::max(normal_dot_velocity, 0.0);
-                if normal_dot_velocity >= -DEFAULT_EPSILON {
-                    collision.hit.witness2
-                }
-            }
-        }
- */
+                       let normal_dot_velocity = normal.dot(character_body.linvel().normalize());
+                       let velocity_magnitude = character_body.linvel().length() * last_step;
+                       let length_along_normal = velocity_magnitude * f32::max(normal_dot_velocity, 0.0);
+                       if normal_dot_velocity >= -DEFAULT_EPSILON {
+                           collision.hit.witness2
+                       }
+                   }
+               }
+        */
         self.is_grounded = mvt.grounded;
         self.is_sliding_down_slope = mvt.is_sliding_down_slope;
 
@@ -168,18 +168,15 @@ impl CharacterControllerComponent {
                 &*collisions,
             );
 
-        let character_body = physics_data
-            .rigid_body_set
-            .get_mut(self.character_body)
-            .unwrap();
-        let position = character_body.position();
+        let character_body = &mut physics_data.rigid_body_set[self.character_body];
+        let pose = character_body.position();
 
-        self.prev_position = Vec2F::new(position.translation.x, position.translation.y);
-        character_body.set_next_kinematic_translation(position.translation + mvt.translation);
+        self.prev_position = Vec2F::new(pose.translation.x, pose.translation.y);
+        character_body.set_next_kinematic_translation(pose.translation + mvt.translation);
     }
 }
 
-/* 
+/*
 pub fn test() {
     if body1.is_dynamic() && !body2.is_dynamic() {
             let normal = *context.normal;

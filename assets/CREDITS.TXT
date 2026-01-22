@@ -1,0 +1,24 @@
+Title:
+    Super Dead Gunner: Platform Shmup Enemies
+
+Author:
+    Emcee Flesher
+
+URL:
+    https://opengameart.org/content/super-dead-gunner-platform-shmup-enemies
+    https://opengameart.org/content/super-dead-space-gunner-merc-redux-platform-shmup-hero
+
+License(s):
+    * CC-BY 4.0 ( https://creativecommons.org/licenses/by/4.0/legalcode )
+
+File(s):
+    * enemies-sheet-alpha.png
+    * char-parts.png
+    * char-sheet-alpha.png
+    * jrob774-explosion_2-sheet-alpha.png
+    * powerups-sheet-alpha.png
+    * projectiles-sheet-alpha.png
+    * tiles-onemassivesheet-alpha.png
+    * weaponflash-sheet-colour-1-alpha.png
+----------------------------------------
+
