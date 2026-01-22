@@ -1,5 +1,8 @@
 use kero::math::Vec2F;
-use rapier2d::{control::KinematicCharacterController, prelude::*};
+use rapier2d::{
+    control::{KinematicCharacterController, PidController},
+    prelude::*,
+};
 
 pub struct PhysicsData {
     pub rigid_body_set: RigidBodySet,
@@ -44,7 +47,7 @@ impl PhysicsData {
     }
 }
 
-pub fn step(physics_data: &mut PhysicsData) {
+pub fn step(physics_data: &mut PhysicsData, event_handler: &ChannelEventCollector) {
     physics_data.physics_pipeline.step(
         physics_data.gravity,
         &physics_data.integration_parameters,
@@ -57,7 +60,7 @@ pub fn step(physics_data: &mut PhysicsData) {
         &mut physics_data.multibody_joint_set,
         &mut physics_data.ccd_solver,
         &(),
-        &(),
+        event_handler,
     );
 }
 
@@ -73,29 +76,47 @@ pub struct CharacterControllerComponent {
     pub character_controller: KinematicCharacterController,
     pub character_body: RigidBodyHandle,
     pub character_collider: ColliderHandle,
-    pub desired_movement: Vec2F,
+    pub desired_movement: Vec2,
     pub is_grounded: bool,
     pub is_sliding_down_slope: bool,
     pub prev_position: Vec2F,
+    pub is_kinematic: bool,
+    pub pid_controller: Option<PidController>,
+    pub ground_sensor_collider: ColliderHandle,
+    pub count_ground_sensor_contacts: u32,
 }
 
 impl CharacterControllerComponent {
-    pub fn new(character_body: RigidBodyHandle, character_collider: ColliderHandle) -> Self {
+    pub fn new(
+        character_body: RigidBodyHandle,
+        character_collider: ColliderHandle,
+        is_kinematic: bool,
+        ground_sensor_collider: ColliderHandle,
+    ) -> Self {
         let mut character_controller = KinematicCharacterController::default();
         character_controller.up = Vec2::NEG_Y;
+        let pid_controller = if is_kinematic {
+            None
+        } else {
+            Some(PidController::default())
+        };
+
         //character_controller.autostep = Some(rapier2d::control::CharacterAutostep { max_height: rapier2d::control::CharacterLength::Absolute(1.0), min_width: rapier2d::control::CharacterLength::Absolute(0.2), include_dynamic_bodies: false });
         Self {
             character_controller,
             character_body,
             character_collider,
-            desired_movement: Vec2F::ZERO,
+            desired_movement: Vec2::ZERO,
             is_grounded: false,
             is_sliding_down_slope: false,
             prev_position: Vec2F::ZERO,
+            is_kinematic,
+            pid_controller,
+            ground_sensor_collider,
+            count_ground_sensor_contacts: 0,
         }
     }
-
-    pub fn update_character_controller(&mut self, _last_step: f32, physics_data: &mut PhysicsData) {
+    pub fn update_kinematic_character_controller(&mut self, physics_data: &mut PhysicsData) {
         let character_body = physics_data
             .rigid_body_set
             .get(self.character_body)
@@ -173,6 +194,47 @@ impl CharacterControllerComponent {
 
         self.prev_position = Vec2F::new(pose.translation.x, pose.translation.y);
         character_body.set_next_kinematic_translation(pose.translation + mvt.translation);
+    }
+
+    pub fn update_character_controller(&mut self, physics_data: &mut PhysicsData) {
+        if self.is_kinematic {
+            self.update_kinematic_character_controller(physics_data);
+        } else {
+            self.update_pid_controller(physics_data);
+        }
+    }
+
+    fn update_pid_controller(&mut self, physics_data: &mut PhysicsData) {
+        if let Some(pid) = &mut self.pid_controller {
+            let character_body = &mut physics_data.rigid_body_set[self.character_body];
+
+            // Adjust the controlled axis depending on the keys pressed by the user.
+            // - If the user is jumping, enable control over Y.
+            // - If the user isn't pressing any key, disable all linear controls to let
+            //   gravity/collision do their thing freely.
+            let mut axes = AxesMask::ANG_Z;
+
+            if self.desired_movement.length() != 0.0 {
+                axes |= if self.desired_movement.y == 0.0 {
+                    AxesMask::LIN_X
+                } else {
+                    AxesMask::LIN_X | AxesMask::LIN_Y
+                }
+            };
+
+            pid.set_axes(axes);
+
+            let corrective_vel = pid.rigid_body_correction(
+                physics_data.integration_parameters.dt,
+                character_body,
+                Pose::from_translation(character_body.translation() + self.desired_movement),
+                RigidBodyVelocity::zero(),
+            );
+            let new_vel = *character_body.vels() + corrective_vel;
+
+            character_body.set_vels(new_vel, true);
+        }
+        self.is_grounded = self.count_ground_sensor_contacts > 0;
     }
 }
 
