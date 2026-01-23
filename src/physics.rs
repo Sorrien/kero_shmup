@@ -101,7 +101,6 @@ impl CharacterControllerComponent {
             Some(PidController::default())
         };
 
-        //character_controller.autostep = Some(rapier2d::control::CharacterAutostep { max_height: rapier2d::control::CharacterLength::Absolute(1.0), min_width: rapier2d::control::CharacterLength::Absolute(0.2), include_dynamic_bodies: false });
         Self {
             character_controller,
             character_body,
@@ -156,20 +155,6 @@ impl CharacterControllerComponent {
             |c| collisions.push(c),
         );
 
-        /*         for collision in &collisions {
-                   let collider = &physics_data.collider_set[collision.handle];
-                   if collider.parent().is_none() {
-                       let normal = collision.hit.normal1;
-
-                       let normal_dot_velocity = normal.dot(character_body.linvel().normalize());
-                       let velocity_magnitude = character_body.linvel().length() * last_step;
-                       let length_along_normal = velocity_magnitude * f32::max(normal_dot_velocity, 0.0);
-                       if normal_dot_velocity >= -DEFAULT_EPSILON {
-                           collision.hit.witness2
-                       }
-                   }
-               }
-        */
         self.is_grounded = mvt.grounded;
         self.is_sliding_down_slope = mvt.is_sliding_down_slope;
 
@@ -237,44 +222,3 @@ impl CharacterControllerComponent {
         self.is_grounded = self.count_ground_sensor_contacts > 0;
     }
 }
-
-/*
-pub fn test() {
-    if body1.is_dynamic() && !body2.is_dynamic() {
-            let normal = *context.normal;
-            if rigid_body_1_linvel.norm() == 0.0 {
-                return;
-            }
-            let normal_dot_velocity = normal.dot(&rigid_body_1_linvel.normalize());
-            let velocity_magnitude = rigid_body_1_linvel.magnitude() * self.last_step;
-            let length_along_normal = velocity_magnitude * Real::max(normal_dot_velocity, 0.0);
-            if normal_dot_velocity >= -DEFAULT_EPSILON {
-                context.solver_contacts.retain(|contact| {
-                    let dist = -contact.dist;
-                    let diff = dist - length_along_normal;
-                    if diff < 0.5 && dist.abs() < self.ghost_collision_distance {
-                        return false;
-                    }
-                    true
-                });
-            }
-        } else if body2.is_dynamic() && !body1.is_dynamic() {
-            let normal = -*context.normal;
-            if rigid_body_2_linvel.norm() == 0.0 {
-                return;
-            }
-            let normal_dot_velocity = normal.dot(&rigid_body_2_linvel.normalize());
-            let velocity_magnitude = rigid_body_2_linvel.magnitude() * self.last_step;
-            let length_along_normal = velocity_magnitude * Real::max(normal_dot_velocity, 0.0);
-            if normal_dot_velocity >= -DEFAULT_EPSILON {
-                context.solver_contacts.retain(|contact| {
-                    let dist = -contact.dist;
-                    let diff = dist - length_along_normal;
-                    if diff < 0.5 && dist.abs() < self.ghost_collision_distance {
-                        return false;
-                    }
-                    true
-                });
-            }
-        }
-} */

@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, fs::File, io::Read, time::Instant};
+use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
     ldtk::{TileGrid, TileType, Tileset},
@@ -12,6 +12,7 @@ use rapier2d::prelude::{
     ActiveEvents, ChannelEventCollector, ColliderBuilder, ColliderHandle, Group, InteractionGroups,
     QueryFilter, Ray, RigidBodyBuilder, RigidBodyHandle, SharedShape,
 };
+use serde::{Deserialize, Serialize};
 
 pub mod ldtk;
 pub mod ldtk_json;
@@ -120,13 +121,13 @@ pub struct PlayerAnimComponent {
 }
 
 impl PlayerAnimComponent {
-    pub fn new() -> Self {
+    pub fn new(run_frame_time: f32) -> Self {
         Self {
             run_index: 0,
             is_crouching: false,
             is_jumping: false,
             flip_x: false,
-            run_frame_time: 0.1,
+            run_frame_time,
             run_frame_time_acc: 0.0,
             aim_angle_index: 0,
             is_muzzle_flashing: false,
@@ -135,34 +136,6 @@ impl PlayerAnimComponent {
             prev_anim_y: 0,
         }
     }
-}
-
-pub struct SpriteResources {
-    pub sprites: Vec<Texture>,
-}
-
-impl SpriteResources {
-    pub fn new() -> Self {
-        Self {
-            sprites: Vec::new(),
-        }
-    }
-
-    pub fn insert(&mut self, texture: Texture) -> usize {
-        let index = self.sprites.len();
-        self.sprites.push(texture);
-        index
-    }
-}
-
-pub struct SpriteComponent {
-    pub sprite_id: usize,
-    pub sprite_width: u32,
-    pub sprite_height: u32,
-    pub sub_offset: Vec2F,
-    pub vert_color: Rgba8,
-    pub color_mode: ColorMode,
-    pub flip: Vec2<bool>,
 }
 
 pub struct Shmup {
@@ -188,7 +161,6 @@ pub struct Shmup {
     use_controller: bool,
     player_projectile_texture: Texture,
     enemies_sheet_1_texture: Texture,
-    sprite_resources: SpriteResources,
     render_debug_collision: bool,
     debug_btn: VirtualButton,
     pause: bool,
@@ -196,12 +168,13 @@ pub struct Shmup {
     event_handler: ChannelEventCollector,
     collision_recv: std::sync::mpsc::Receiver<rapier2d::prelude::CollisionEvent>,
     contact_force_recv: std::sync::mpsc::Receiver<rapier2d::prelude::ContactForceEvent>,
+    cfg: GameConfig,
 }
 
 impl Game for Shmup {
-    type Config = ();
+    type Config = GameConfig;
 
-    fn new(ctx: &Context, _cfg: Self::Config) -> Result<Self, GameError>
+    fn new(ctx: &Context, cfg: Self::Config) -> Result<Self, GameError>
     where
         Self: Sized,
     {
@@ -215,37 +188,28 @@ impl Game for Shmup {
         let event_handler = ChannelEventCollector::new(collision_send, contact_force_send);
 
         let mut world = World::new();
-        let mut sprite_resources = SpriteResources::new();
 
         let player_texture = ctx
             .graphics
             .load_png_from_file("assets/char-sheet-alpha.png", true)
             .unwrap();
-        let player_texture_id = sprite_resources.insert(player_texture);
 
         let player_weapon_flash_texture = ctx
             .graphics
             .load_png_from_file("assets/weaponflash-sheet-colour-1-alpha.png", true)
             .unwrap();
 
-        let player_weapon_flash_texture_id = sprite_resources.insert(player_weapon_flash_texture);
-
         let player_projectile_texture = ctx
             .graphics
             .load_png_from_file("assets/projectiles-sheet-alpha.png", true)
             .unwrap();
-
-        let player_projectile_texture_id = sprite_resources.insert(player_projectile_texture);
 
         let enemies_sheet_1_texture = ctx
             .graphics
             .load_png_from_file("assets/enemies-sheet-alpha.png", true)
             .unwrap();
 
-        let enemies_sheet_1_texture_id = sprite_resources.insert(enemies_sheet_1_texture);
-
-        let mut level_file =
-            File::open("assets/levels/PlatformerTest.ldtk").expect("failed to open ldtk file");
+        let mut level_file = File::open(&cfg.default_level).expect("failed to open ldtk file");
         let mut serialized_level = String::new();
         level_file
             .read_to_string(&mut serialized_level)
@@ -289,16 +253,11 @@ impl Game for Shmup {
             }
         }
         for level in ldtk.levels {
-            //println!("level: {}", level.identifier);
-            //let mut merge_map: HashMap<i64, MinMax> = HashMap::new();
-
             if let Some(mut layers) = level.layer_instances {
                 layers.reverse();
                 for layer in layers {
-                    //let mut voxels = Vec::new();
                     let grid_pos = Vec2F::new(level.world_x as f32, level.world_y as f32);
                     if layer.visible && layer.tileset_def_uid.is_some() {
-                        //println!("layer: {}", layer.identifier);
                         let tiles = layer.auto_layer_tiles;
                         let mut colliders = Vec::new();
                         if layer.identifier == "Collisions" {
@@ -312,92 +271,61 @@ impl Game for Shmup {
                                         TileType::Collider => {
                                             let tile_x = tile.px[0];
                                             let tile_y = tile.px[1];
-                                            if vert_slices.contains_key(&tile_y) {
-                                                if let Some(slice) = vert_slices.get_mut(&tile_y) {
-                                                    slice.push(tile_x);
+                                            if cfg.merge_tiles {
+                                                if vert_slices.contains_key(&tile_y) {
+                                                    if let Some(slice) =
+                                                        vert_slices.get_mut(&tile_y)
+                                                    {
+                                                        slice.push(tile_x);
+                                                    }
+                                                } else {
+                                                    let slice = vec![tile_x];
+                                                    vert_slices.insert(tile_y, slice);
                                                 }
                                             } else {
-                                                let slice = vec![tile_x];
-                                                vert_slices.insert(tile_y, slice);
+                                                let translation = grid_pos
+                                                    + Vec2F::new(tile_x as f32, tile_y as f32);
+
+                                                let radius = 0.2;
+                                                let collider = ColliderBuilder::round_cuboid(
+                                                    pixel_scale_to_physics_f(size - radius),
+                                                    pixel_scale_to_physics_f(size - radius),
+                                                    pixel_scale_to_physics_f(radius),
+                                                )
+                                                .translation(pixel_scale_to_physics_glam(
+                                                    rapier2d::math::Vector2::new(
+                                                        translation.x + size,
+                                                        translation.y + size,
+                                                    ),
+                                                ))
+                                                .collision_groups(InteractionGroups::new(
+                                                    TERRAIN_GROUP,
+                                                    PLAYER_GROUP | ENEMY_GROUP,
+                                                    rapier2d::prelude::InteractionTestMode::And,
+                                                ));
+
+                                                colliders.push(
+                                                    physics_data.collider_set.insert(collider),
+                                                );
                                             }
-
-                                            let translation = grid_pos
-                                                + Vec2F::new(tile.px[0] as f32, tile.px[1] as f32);
-
-                                            //somehow we need a check for if this is contiguous
-                                            /*                                          if let Some(minmax) =
-                                                                                           merge_map.get_mut(&(translation.y as i64))
-                                                                                       {
-                                                                                           if minmax.min > translation.x as i64 {
-                                                                                               minmax.min = translation.x as i64;
-                                                                                           }
-
-                                                                                           if minmax.max < translation.x as i64 {
-                                                                                               minmax.max = translation.x as i64;
-                                                                                           }
-                                                                                       } else {
-                                                                                           merge_map.insert(
-                                                                                               translation.y as i64,
-                                                                                               MinMax {
-                                                                                                   min: translation.x as i64,
-                                                                                                   max: translation.x as i64,
-                                                                                                   size: size as i64,
-                                                                                               },
-                                                                                           );
-                                                                                       }
-                                            */
-                                            /*  let radius = 0.2;
-                                            let collider = ColliderBuilder::round_cuboid(
-                                                size - radius,
-                                                size - radius,
-                                                radius,
-                                            )
-                                            .translation(rapier2d::math::Vector2::new(
-                                                translation.x + size,
-                                                translation.y + size,
-                                            ))
-                                            .collision_groups(InteractionGroups::new(
-                                                TERRAIN_GROUP,
-                                                PLAYER_GROUP | ENEMY_GROUP,
-                                                rapier2d::prelude::InteractionTestMode::And,
-                                            )); */
-                                            /*                                             voxels.push(rapier2d::math::Vector2::new(
-                                                translation.x as f32,
-                                                translation.y as f32,
-                                            )); */
-
-                                            /* colliders
-                                            .push(physics_data.collider_set.insert(collider)); */
                                         }
                                     }
                                 }
                             }
 
-                            for (y, slice) in &mut vert_slices {
-                                slice.sort();
-                                let mut start_index = 0;
-                                for i in 1..slice.len() {
-                                    let x = slice[i];
-                                    let x_2 = slice[i - 1];
-                                    if (x - x_2).abs() > tile_set.grid_size || i == slice.len() - 1
-                                    {
-                                        /* let length = x as f32 + size - slice[start_index] as f32 + size;
-                                        let half_length = length / 2.0 / 2.0; */
-                                        let length =
-                                            (i - start_index) as f32 * tile_set.grid_size as f32;
-                                        let half_length = length / 2.0;
-
+                            if cfg.merge_tiles {
+                                for (y, slice) in &mut vert_slices {
+                                    slice.sort();
+                                    if slice.len() == 1 {
                                         let radius = 0.2;
                                         let collider = ColliderBuilder::round_cuboid(
-                                            pixel_scale_to_physics_f(half_length - radius),
+                                            pixel_scale_to_physics_f(size - radius),
                                             pixel_scale_to_physics_f(size - radius),
                                             pixel_scale_to_physics_f(radius),
                                         )
                                         .translation(pixel_scale_to_physics_glam(
                                             rapier2d::math::Vector2::new(
-                                                grid_pos.x
-                                                    + slice[start_index] as f32
-                                                    + half_length,
+                                                grid_pos.x + slice[0] as f32 + size,
                                                 grid_pos.y + *y as f32 + size,
                                             ),
                                         ))
@@ -406,9 +334,74 @@ impl Game for Shmup {
                                             PLAYER_GROUP | ENEMY_GROUP,
                                             rapier2d::prelude::InteractionTestMode::And,
                                         ));
-
                                         colliders.push(physics_data.collider_set.insert(collider));
-                                        start_index = i;
+                                    } else {
+                                        let mut start_index = 0;
+                                        for i in 1..slice.len() {
+                                            let x = slice[i];
+                                            let x_2 = slice[i - 1];
+                                            if (x - x_2).abs() > tile_set.grid_size {
+                                                let length = (i - start_index) as f32
+                                                    * tile_set.grid_size as f32;
+                                                let half_length = length / 2.0;
+
+                                                let radius = 0.2;
+                                                let collider = ColliderBuilder::round_cuboid(
+                                                    pixel_scale_to_physics_f(half_length - radius),
+                                                    pixel_scale_to_physics_f(size - radius),
+                                                    pixel_scale_to_physics_f(radius),
+                                                )
+                                                .translation(pixel_scale_to_physics_glam(
+                                                    rapier2d::math::Vector2::new(
+                                                        grid_pos.x
+                                                            + slice[start_index] as f32
+                                                            + half_length,
+                                                        grid_pos.y + *y as f32 + size,
+                                                    ),
+                                                ))
+                                                .collision_groups(InteractionGroups::new(
+                                                    TERRAIN_GROUP,
+                                                    PLAYER_GROUP | ENEMY_GROUP,
+                                                    rapier2d::prelude::InteractionTestMode::And,
+                                                ));
+
+                                                colliders.push(
+                                                    physics_data.collider_set.insert(collider),
+                                                );
+                                                start_index = i;
+                                            }
+
+                                            if i == slice.len() - 1 {
+                                                let length = (i + 1 - start_index) as f32
+                                                    * tile_set.grid_size as f32;
+                                                let half_length = length / 2.0;
+
+                                                let radius = 0.2;
+                                                let collider = ColliderBuilder::round_cuboid(
+                                                    pixel_scale_to_physics_f(half_length - radius),
+                                                    pixel_scale_to_physics_f(size - radius),
+                                                    pixel_scale_to_physics_f(radius),
+                                                )
+                                                .translation(pixel_scale_to_physics_glam(
+                                                    rapier2d::math::Vector2::new(
+                                                        grid_pos.x
+                                                            + slice[start_index] as f32
+                                                            + half_length,
+                                                        grid_pos.y + *y as f32 + size,
+                                                    ),
+                                                ))
+                                                .collision_groups(InteractionGroups::new(
+                                                    TERRAIN_GROUP,
+                                                    PLAYER_GROUP | ENEMY_GROUP,
+                                                    rapier2d::prelude::InteractionTestMode::And,
+                                                ));
+
+                                                colliders.push(
+                                                    physics_data.collider_set.insert(collider),
+                                                );
+                                                start_index = i;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -428,17 +421,6 @@ impl Game for Shmup {
                             )),
                             rendered: false,
                         });
-                        /*                         if voxels.len() > 0 {
-                            let tile_set = tilesets.get(&layer.tileset_def_uid.unwrap()).unwrap();
-
-                            let collider = ColliderBuilder::voxels_from_points(
-                                rapier2d::math::Vec2::splat(tile_set.grid_size as f32),
-                                &voxels,
-                            )
-                            .translation(rapier2d::math::Vector2::new(level.world_x as f32, level.world_y as f32));
-
-                            physics_data.collider_set.insert(collider);
-                        } */
                     }
 
                     for entity_instance in layer.entity_instances {
@@ -471,10 +453,7 @@ impl Game for Shmup {
 
                                 let character_collider = ColliderBuilder::ball(
                                     pixel_scale_to_physics_f(TEST_ENEMY_WIDTH / 2.0),
-                                ) /* capsule_y(
-                                    TEST_ENEMY_HEIGHT / 2.,
-                                    TEST_ENEMY_WIDTH / 2.,
-                                ) */
+                                )
                                 .collision_groups(InteractionGroups::new(
                                     ENEMY_GROUP,
                                     TERRAIN_GROUP | PLAYER_GROUP | PLAYER_PROJECTILE_GROUP,
@@ -489,28 +468,18 @@ impl Game for Shmup {
 
                                 let ground_sensor_collider =
                                     ColliderBuilder::new(SharedShape::ball(0.1))
-                                        // The collider translation wrt. the body it is attached to.
-                                        // Default: the zero vector.
                                         .translation(rapier2d::math::Vec2::new(
                                             0.0,
                                             -pixel_scale_to_physics_f(TEST_ENEMY_WIDTH / 2.0),
                                         ))
-                                        // The collider density. If non-zero the collider's mass and angular inertia will be added
-                                        // to the inertial properties of the body it is attached to.
-                                        // Default: 1.0
                                         .density(0.0)
-                                        // The friction coefficient of this collider.
-                                        // Default: ColliderBuilder::default_friction() == 0.5
                                         .friction(0.0)
-                                        // Whether this collider is a sensor.
-                                        // Default: false
                                         .sensor(true)
                                         .collision_groups(InteractionGroups::new(
                                             ENEMY_GROUP,
                                             TERRAIN_GROUP | PLAYER_GROUP,
                                             rapier2d::prelude::InteractionTestMode::Or,
                                         ))
-                                        // All done, actually build the collider.
                                         .build();
 
                                 let ground_sensor_collider =
@@ -540,18 +509,6 @@ impl Game for Shmup {
                     }
                 }
             }
-
-            /*             for (y, minmax) in merge_map {
-                let collider = ColliderBuilder::cuboid(
-                    (minmax.max - minmax.min) as f32 / 2.,
-                    minmax.size as f32,
-                )
-                .translation(rapier2d::math::Vector2::new(
-                    (minmax.max - minmax.min) as f32 / 2.,
-                    y as f32,
-                ));
-                physics_data.collider_set.insert(collider);
-            } */
         }
         let player_start = if let Some(player_start) = player_start {
             player_start
@@ -560,7 +517,7 @@ impl Game for Shmup {
         };
 
         let src = VirtualSource::last_active(ctx);
-        let spawn_btn = VirtualButton::new(&src, Key::Enter, None);
+        let spawn_btn = VirtualButton::new(&src, Key::Period, None);
         let debug_btn = VirtualButton::new(&src, Key::Comma, None);
         let step_button = VirtualButton::new(&src, Key::P, None);
         let pause_btn = VirtualButton::new(&src, Key::L, None);
@@ -605,21 +562,12 @@ impl Game for Shmup {
         let ground_sensor_collider = ColliderBuilder::new(SharedShape::ball(
             pixel_scale_to_physics_f(PLAYER_WIDTH / 2.),
         ))
-        // The collider translation wrt. the body it is attached to.
-        // Default: the zero vector.
         .translation(rapier2d::math::Vec2::new(
             0.0,
             pixel_scale_to_physics_f(PLAYER_HEIGHT / 2.),
         ))
-        // The collider density. If non-zero the collider's mass and angular inertia will be added
-        // to the inertial properties of the body it is attached to.
-        // Default: 1.0
         .density(0.0)
-        // The friction coefficient of this collider.
-        // Default: ColliderBuilder::default_friction() == 0.5
         .friction(0.0)
-        // Whether this collider is a sensor.
-        // Default: false
         .sensor(true)
         .collision_groups(InteractionGroups::new(
             PLAYER_GROUP,
@@ -627,7 +575,6 @@ impl Game for Shmup {
             rapier2d::prelude::InteractionTestMode::Or,
         ))
         .active_events(ActiveEvents::COLLISION_EVENTS)
-        // All done, actually build the collider.
         .build();
 
         let ground_sensor_collider = physics_data.collider_set.insert_with_parent(
@@ -643,7 +590,7 @@ impl Game for Shmup {
                 false,
                 ground_sensor_collider,
             ),
-            PlayerAnimComponent::new(),
+            PlayerAnimComponent::new(cfg.player_walk_anim_speed),
         ));
         physics_data
             .collider_set
@@ -698,12 +645,11 @@ impl Game for Shmup {
                 vec2(player_start.x, player_start.y),
                 window_size.x,
                 window_size.y,
-                1.,
+                zoom_amount,
             ),
             player_weapon_flash_texture,
             player_projectile_texture,
             enemies_sheet_1_texture,
-            sprite_resources,
             render_debug_collision: false,
             debug_btn,
             pause: false,
@@ -712,6 +658,7 @@ impl Game for Shmup {
             event_handler,
             collision_recv,
             contact_force_recv,
+            cfg,
         })
     }
 
@@ -729,8 +676,9 @@ impl Game for Shmup {
                 return Ok(());
             }
         }
+
         //update inputs
-        if let Ok((player)) = self
+        if let Ok(player) = self
             .world
             .query_one_mut::<&mut PlayerComponent>(self.player_entity)
         {
@@ -800,7 +748,7 @@ impl Game for Shmup {
             if player.is_shooting && player.time_since_shot_start >= player.time_per_shot {
                 player.is_shooting = false;
             } else if player.is_shooting {
-                player.time_since_shot_start += dt; //ctx.dt();
+                player.time_since_shot_start += dt;
             }
 
             if player.time_since_last_shot >= player.shot_delay_time
@@ -811,8 +759,7 @@ impl Game for Shmup {
                 player.time_since_shot_start = 0.;
                 player.is_shooting = true;
 
-                //spawn projectile here
-
+                //spawn projectile
                 let body_translation =
                     self.physics_data.rigid_body_set[character.character_body].translation();
                 let body_translation = Vec2F::new(body_translation.x, body_translation.y);
@@ -854,10 +801,7 @@ impl Game for Shmup {
                         player.desired_velocity.y = -self.physics_data.gravity.y * 1.1;
                     } else {
                         self.physics_data.rigid_body_set[character_controller.character_body]
-                            .apply_impulse(
-                                rapier2d::math::Vec2::new(0., -self.physics_data.gravity.y * 1.1),
-                                true,
-                            );
+                            .apply_impulse(rapier2d::math::Vec2::new(0., -2.5), true);
                     }
                     /*  player.desired_velocity.y = -self.physics_data.gravity.y
                      * (2.0 * jump_height / self.physics_data.gravity.y).sqrt();  */
@@ -869,7 +813,11 @@ impl Game for Shmup {
 
             let mut desired_velocity = player.desired_velocity;
 
-            desired_velocity.x *= walk_speed * dt;
+            if character_controller.is_kinematic {
+                desired_velocity.x *= walk_speed * dt;
+            } else {
+                desired_velocity.x *= 0.05;
+            }
 
             character_controller.desired_movement =
                 rapier2d::math::Vec2::new(desired_velocity.x, desired_velocity.y);
@@ -985,7 +933,7 @@ impl Game for Shmup {
             let body = &self.physics_data.rigid_body_set[character_controller.character_body];
             let translation = body.position().translation;
             let translation = physics_scale_to_pixels_glam(translation);
-           
+
             self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
             self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.;
 
@@ -1031,32 +979,20 @@ impl Game for Shmup {
     }
 
     fn render(&mut self, ctx: &Context, draw: &mut Draw) -> Result<(), GameError> {
+        draw.set_main_sampler(Sampler::new(
+            AddressMode::Clamp,
+            AddressMode::Clamp,
+            FilterMode::Linear,
+            FilterMode::Nearest,
+        ));
         for grid in &mut self.grids {
             if !grid.rendered {
                 draw.set_surface(grid.surface.clone(), Rgba8::TRANSPARENT);
                 let tile_set = self.tilesets.get(&grid.tile_set_id).unwrap();
-                /*let tiles = tile_set.tiles.as_slice();
-                             for (i, tile_id) in grid.int_grid_csv.iter().enumerate() {
-                    let offset = Vec2F::new(i as f32 % grid.width as f32, i as f32 / grid.height as f32);
-                    //draw.push_translation(grid.pos + offset);
-
-                    let sub = &tiles[*tile_id as usize + 1];
-
-                    draw.subtexture_at(sub, offset);
-                } */
                 let mut white = Rgba8::WHITE;
                 white.a = (grid.opacity * 255.0) as u8;
-                //println!("opacity: {}", white.a);
                 for tile in &grid.tiles {
                     let pos = Vec2F::new(tile.px[0] as f32, tile.px[1] as f32);
-                    //draw.push_translation();
-                    /*                 println!(
-                        "src: {},{} coord: {},{}",
-                        tile.src[0],
-                        tile.src[1],
-                        tile.src[0] as u32 / tile_set.grid_size as u32,
-                        tile.src[1] as u32 / tile_set.grid_size as u32,
-                    ); */
                     let sub = tile_set
                         .tiles
                         .get(
@@ -1077,7 +1013,6 @@ impl Game for Shmup {
                     };
 
                     draw.subtexture_at_flipped(sub, pos, white, ColorMode::MULT, flip);
-                    //draw.subtexture_at(sub, pos);
                 }
 
                 grid.rendered = true;
@@ -1096,8 +1031,6 @@ impl Game for Shmup {
             draw.texture_at(&grid.surface, grid.pos - self.camera.position);
         }
 
-        //let alpha = self.time_since_last_phys_update / PHYSICS_DT;
-        //let alpha = ctx.accum.get().as_secs_f32() / ctx.dt();
         for ball in &self.balls {
             let ball_body = &self.physics_data.rigid_body_set[*ball];
             let translation = physics_scale_to_pixels_glam(ball_body.translation());
@@ -1166,15 +1099,6 @@ impl Game for Shmup {
             let translation = physics_scale_to_pixels_glam(body.translation());
             let translation = Vec2F::new(translation.x, translation.y);
 
-            /*             let translation =
-            translation * alpha + character_controller.prev_position * (1.0 - alpha); */
-            /*             draw.circle(
-                circle(Vec2F::new(translation.x, translation.y), 5.),
-                Rgba8::RED,
-                None,
-            ); */
-            //let lin_vel = body.linvel();
-
             let mut animation_x = 0;
 
             player_anim.is_muzzle_flashing = player.is_shooting;
@@ -1190,7 +1114,7 @@ impl Game for Shmup {
                 player_anim.is_crouching = false;
             }
 
-            let is_running = player.desired_velocity.x.abs() > 0.; //lin_vel.x.abs() > 0.;
+            let is_running = player.desired_velocity.x.abs() > 0.;
 
             if is_running && !player_anim.is_jumping {
                 player_anim.run_frame_time_acc += ctx.dt();
@@ -1207,11 +1131,6 @@ impl Game for Shmup {
                 }
             }
 
-            /* if lin_vel.x > 0. {
-                player_anim.flip_x = false;
-            } else if lin_vel.x < 0. {
-                player_anim.flip_x = true;
-            } */
             if player.desired_velocity.x > 0. {
                 player_anim.flip_x = false;
             } else if player.desired_velocity.x < 0. {
@@ -1219,7 +1138,7 @@ impl Game for Shmup {
             }
 
             let aim_angle = if player_anim.flip_x {
-                let x = 180.0 - player.aim_angle; //(player.aim_angle - 360.0).abs()
+                let x = 180.0 - player.aim_angle;
                 let x = if x < 0. { 360. + x } else { x };
                 360.0 - x
             } else {
@@ -1230,28 +1149,6 @@ impl Game for Shmup {
             player_anim.aim_angle_index = quadrant_index;
 
             let animation_y = player_anim.aim_angle_index * 46;
-            /*             if (animation_x as u32 * 46) % 46 != 0 || animation_y % 46 != 0 {
-                println!("anim x {} anim y: {}",animation_x as u32 * 46, animation_y);
-            } */
-            /*             if character_controller.is_grounded && !player_anim.was_grounded_last_frame {
-                println!(
-                    "prev x {} prev y {} anim x {} anim y: {}",
-                    player_anim.prev_anim_x,
-                    player_anim.prev_anim_y,
-                    animation_x as u32 * 46,
-                    animation_y
-                );
-                self.pause = true;
-            } */
-            /*             if self.pause == true {
-                println!(
-                    "prev x {} prev y {} anim x {} anim y: {}",
-                    player_anim.prev_anim_x,
-                    player_anim.prev_anim_y,
-                    animation_x as u32 * 46,
-                    animation_y
-                );
-            } */
 
             let sub = self
                 .player_texture
@@ -1287,23 +1184,6 @@ impl Game for Shmup {
                 );
             }
 
-            /*             let rect_center = Vec2F::new(
-                translation.x - PLAYER_WIDTH / 2.0,
-                translation.y - PLAYER_HEIGHT / 2.0,
-            ) - self.camera.position;
-            draw.rect_outline(
-                rect(rect_center.x, rect_center.y, PLAYER_WIDTH, PLAYER_HEIGHT),
-                Rgba::GREEN,
-            );
-
-            draw.circle(
-                circle(
-                    Vec2F::new(translation.x, translation.y) - self.camera.position,
-                    5.,
-                ),
-                Rgba8::GREEN,
-                None,
-            ); */
             player_anim.was_grounded_last_frame = character_controller.is_grounded;
             player_anim.prev_anim_x = animation_x as u32 * 46;
             player_anim.prev_anim_y = animation_y;
@@ -1316,20 +1196,6 @@ impl Game for Shmup {
             let body = &self.physics_data.rigid_body_set[character_controller.character_body];
             let translation = body.translation();
             let translation = physics_scale_to_pixels_glam(translation);
-            /* let rect_center = Vec2F::new(
-                translation.x, //- TEST_ENEMY_WIDTH / 2.0,
-                translation.y, //- TEST_ENEMY_HEIGHT / 2.0,
-            ) - self.camera.position;
-                        draw.rect_outline(
-                rect(
-                    rect_center.x,
-                    rect_center.y,
-                    TEST_ENEMY_WIDTH,
-                    TEST_ENEMY_HEIGHT,
-                ),
-                Rgba::RED,
-            ); */
-            //draw.circle_outline(circle(rect_center, TEST_ENEMY_WIDTH / 2.0), Rgba::RED, None);
 
             let sub = self.enemies_sheet_1_texture.sub(rect(0, 58, 20, 24));
 
@@ -1363,7 +1229,7 @@ impl Game for Shmup {
                         &self.physics_data,
                         *collider,
                         self.camera.position,
-                        Rgba8::BLACK,
+                        Rgba8::RED,
                     );
                 }
             }
@@ -1374,18 +1240,6 @@ impl Game for Shmup {
             Rgba8::RED,
             None,
         );
-
-        /*         draw.circle(circle(Vec2F::new(0., 0.), 5.), Rgba8::GREEN, None);
-
-        let window_center = ctx.window.center();
-        draw.circle(
-            circle(
-                Vec2F::new(window_center.x as f32, window_center.y as f32) / scale,
-                5.,
-            ),
-            Rgba8::BLUE,
-            None,
-        ); */
 
         Ok(())
     }
@@ -1481,4 +1335,13 @@ pub struct MinMax {
     pub min: i64,
     pub max: i64,
     pub size: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GameConfig {
+    pub window_size: (u32, u32),
+    pub window_title: String,
+    pub default_level: String,
+    pub player_walk_anim_speed: f32,
+    pub merge_tiles: bool,
 }

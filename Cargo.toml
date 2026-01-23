@@ -15,8 +15,9 @@ opt-level = 3
 kero = { version = "0.1.0", git = "https://github.com/feyworks/kero" }
 env_logger = "0.11.8"
 hecs = "0.11.0"
-serde = "1.0"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
+ron = "0.12"
 
 rapier2d = { version = "*", features = ["parallel"] }
 

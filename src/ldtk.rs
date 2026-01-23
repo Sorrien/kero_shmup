@@ -24,6 +24,7 @@ pub struct Tileset {
 }
 
 #[repr(u8)]
+#[derive(Debug, Clone, Copy)]
 pub enum TileType {
     None = 0,
     Collider = 1,

@@ -212,6 +212,9 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "block"
@@ -610,7 +613,7 @@ dependencies = [
 [[package]]
 name = "fey_color"
 version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "approx",
  "bytemuck",
@@ -621,7 +624,7 @@ dependencies = [
 [[package]]
 name = "fey_font"
 version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "ab_glyph",
  "fey_color",
@@ -634,7 +637,7 @@ dependencies = [
 [[package]]
 name = "fey_grid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "fey_math",
 ]
@@ -642,7 +645,7 @@ dependencies = [
 [[package]]
 name = "fey_guid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "rand",
  "serde",
@@ -652,7 +655,7 @@ dependencies = [
 [[package]]
 name = "fey_img"
 version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "bytemuck",
  "fey_color",
@@ -667,7 +670,7 @@ dependencies = [
 [[package]]
 name = "fey_math"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "approx",
  "bytemuck",
@@ -678,7 +681,7 @@ dependencies = [
 [[package]]
 name = "fey_packer"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "fey_math",
 ]
@@ -686,7 +689,7 @@ dependencies = [
 [[package]]
 name = "fey_rand"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "fey_math",
  "rand",
@@ -1183,7 +1186,7 @@ dependencies = [
 [[package]]
 name = "kero"
 version = "0.1.11"
-source = "git+https://github.com/feyworks/kero#a0cb000c02e614551d8d8883dc7e82dc696e335a"
+source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
 dependencies = [
  "arrayvec",
  "bytemuck",
@@ -1219,6 +1222,7 @@ dependencies = [
  "hecs",
  "kero",
  "rapier2d",
+ "ron",
  "serde",
  "serde_json",
 ]
@@ -2002,9 +2006,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.105"
+version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
+checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
@@ -2234,6 +2238,20 @@ name = "robust"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
+
+[[package]]
+name = "ron"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd490c5b18261893f14449cbd28cb9c0b637aebf161cd77900bfdedaff21ec32"
+dependencies = [
+ "bitflags 2.10.0",
+ "once_cell",
+ "serde",
+ "serde_derive",
+ "typeid",
+ "unicode-ident",
+]
 
 [[package]]
 name = "rustc-hash"
@@ -2629,6 +2647,12 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+
+[[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
 
 [[package]]
 name = "typenum"
