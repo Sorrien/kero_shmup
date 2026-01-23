@@ -598,26 +598,6 @@ impl Game for Shmup {
             .unwrap()
             .user_data = player_entity.id() as u128;
 
-        let player_texture = ctx
-            .graphics
-            .load_png_from_file("assets/char-sheet-alpha.png", true)
-            .unwrap();
-
-        let player_weapon_flash_texture = ctx
-            .graphics
-            .load_png_from_file("assets/weaponflash-sheet-colour-1-alpha.png", true)
-            .unwrap();
-
-        let player_projectile_texture = ctx
-            .graphics
-            .load_png_from_file("assets/projectiles-sheet-alpha.png", true)
-            .unwrap();
-
-        let enemies_sheet_1_texture = ctx
-            .graphics
-            .load_png_from_file("assets/enemies-sheet-alpha.png", true)
-            .unwrap();
-
         let zoom_amount = 1.;
 
         let scale = zoom_amount * 2.0 * ctx.window.scale_factor();
