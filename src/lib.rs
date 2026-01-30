@@ -1,11 +1,19 @@
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
+    audio::{AudioEmitter, load_audio, setup_output_stream, spawn_sound, update_audio_emitters},
+    hierarchy::TransformComponent,
     ldtk::{TileGrid, TileType, Tileset},
     ldtk_json::LdtkJson,
-    physics::{CharacterControllerComponent, PhysicsData, step},
+    physics::{
+        CharacterControllerComponent, PhysicsData, physics_scale_to_pixels,
+        physics_scale_to_pixels_f, physics_scale_to_pixels_glam, pixel_scale_to_physics_f,
+        pixel_scale_to_physics_glam, step,
+    },
     player::PlayerComponent,
 };
+use cpal::traits::{DeviceTrait, HostTrait};
+use glamx::Affine2;
 use hecs::{Entity, World};
 use kero::{grid::Grid, prelude::*};
 use rapier2d::prelude::{
@@ -14,6 +22,8 @@ use rapier2d::prelude::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod audio;
+pub mod hierarchy;
 pub mod ldtk;
 pub mod ldtk_json;
 pub mod physics;
@@ -33,32 +43,6 @@ const ENEMY_PROJECTILE_GROUP: Group = Group::GROUP_5;
 
 pub fn to_logical_f(pos: Vec2F, scale: f32) -> Vec2F {
     pos / scale
-}
-
-const PHYSICS_SCALE: f32 = 50.0;
-
-pub fn pixel_scale_to_physics_f(val: f32) -> f32 {
-    val / PHYSICS_SCALE
-}
-
-pub fn physics_scale_to_pixels_f(val: f32) -> f32 {
-    val * PHYSICS_SCALE
-}
-
-pub fn pixel_scale_to_physics(vec: Vec2F) -> Vec2F {
-    vec / PHYSICS_SCALE
-}
-
-pub fn physics_scale_to_pixels(vec: Vec2F) -> Vec2F {
-    vec * PHYSICS_SCALE
-}
-
-pub fn pixel_scale_to_physics_glam(vec: rapier2d::math::Vec2) -> rapier2d::math::Vec2 {
-    vec / PHYSICS_SCALE
-}
-
-pub fn physics_scale_to_pixels_glam(vec: rapier2d::math::Vec2) -> rapier2d::math::Vec2 {
-    vec * PHYSICS_SCALE
 }
 
 pub struct RaycastProjectile {
@@ -138,6 +122,26 @@ impl PlayerAnimComponent {
     }
 }
 
+#[allow(unused)]
+pub struct AudioData {
+    sound_scene_handle: oddio::SpatialSceneControl,
+    stream: cpal::Stream,
+    sample_rate: u32,
+    host: cpal::Host,
+    device: cpal::Device,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SoundCueConfig {
+    pub id: String,
+    pub sounds: Vec<String>,
+}
+
+pub struct SoundCue {
+    pub sounds: Vec<usize>,
+}
+
+#[allow(unused)]
 pub struct Shmup {
     tilesets: HashMap<i64, Tileset>,
     grids: Vec<TileGrid>,
@@ -169,6 +173,18 @@ pub struct Shmup {
     collision_recv: std::sync::mpsc::Receiver<rapier2d::prelude::CollisionEvent>,
     contact_force_recv: std::sync::mpsc::Receiver<rapier2d::prelude::ContactForceEvent>,
     cfg: GameConfig,
+    /*sound_scene_handle: oddio::SpatialSceneControl,
+         stream: cpal::Stream,
+    sample_rate: u32,
+    host: cpal::Host,
+    device: cpal::Device, */
+    audio: AudioData,
+    audio_device_check_timer: f32,
+    audio_device_check_time: f32,
+    sounds: Vec<std::sync::Arc<oddio::Frames<f32>>>,
+    sound_metadata: Vec<audio::AudioSample>,
+    sound_cues: HashMap<String, SoundCue>,
+    rand: Rand,
 }
 
 impl Game for Shmup {
@@ -603,6 +619,85 @@ impl Game for Shmup {
         let scale = zoom_amount * 2.0 * ctx.window.scale_factor();
         let window_size = to_logical_f(ctx.window.size().to_f32(), scale);
 
+        let (sound_scene_handle, scene) = oddio::SpatialScene::new();
+
+        /*         let host = cpal::default_host();
+
+        let device = host
+            .default_output_device()
+            .expect("no output device available!");
+        let sample_rate = device.default_output_config().unwrap().sample_rate();
+        let stream_config = cpal::StreamConfig {
+            channels: device.default_output_config().unwrap().channels(),
+            sample_rate,
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        // We send `scene` into this closure, where changes to `scene_handle` are reflected.
+        // `scene_handle` is how we add new sounds and modify the scene live.
+        let stream = device
+            .build_output_stream(
+                &stream_config,
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    let frames = oddio::frame_stereo(data);
+                    oddio::run(&mut scene, sample_rate, frames);
+                },
+                move |err| {
+                    eprintln!("{}", err);
+                },
+                None,
+            )
+            .unwrap();
+        stream.play().unwrap(); */
+
+        let (stream, sample_rate, host, device) = setup_output_stream(scene);
+
+        let audio = AudioData {
+            sound_scene_handle,
+            stream,
+            sample_rate,
+            host,
+            device,
+        };
+
+        let mut sounds = cfg
+            .sound_cues
+            .iter()
+            .map(|sound_cue| sound_cue.sounds.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        sounds.sort();
+        sounds.dedup();
+
+        let (sounds, sound_metadata, map) = load_audio(sounds)?;
+
+        let sound_cues =
+            HashMap::<String, SoundCue>::from_iter(cfg.sound_cues.iter().map(|sound_cue| {
+                (
+                    sound_cue.id.clone(),
+                    SoundCue {
+                        sounds: sound_cue
+                            .sounds
+                            .iter()
+                            .map(|sound| *map.get(sound).unwrap())
+                            .collect::<Vec<_>>(),
+                    },
+                )
+            }));
+        /*         let sound_cues = cfg
+        .sound_cues
+        .iter()
+        .map(|sound_cue| SoundCue {
+            sounds: sound_cue
+                .sounds
+                .iter()
+                .map(|sound| *map.get(sound).unwrap())
+                .collect::<Vec<_>>(),
+        })
+        .collect::<Vec<_>>(); */
+
+        let rand = kero::rand::Rand::new();
+
         Ok(Self {
             tilesets,
             grids,
@@ -639,10 +734,34 @@ impl Game for Shmup {
             collision_recv,
             contact_force_recv,
             cfg,
+            audio,
+            audio_device_check_timer: 0.0,
+            audio_device_check_time: 1.0,
+            sounds,
+            sound_metadata,
+            sound_cues,
+            rand,
         })
     }
 
     fn update(&mut self, ctx: &Context) -> Result<(), GameError> {
+        self.audio_device_check_timer += ctx.dt();
+        if self.audio_device_check_timer >= self.audio_device_check_time {
+            if self.audio.host.default_output_device().unwrap().id() != self.audio.device.id() {
+                let (sound_scene_handle, scene) = oddio::SpatialScene::new();
+                let (stream, sample_rate, host, device) = setup_output_stream(scene);
+
+                self.audio = AudioData {
+                    sound_scene_handle,
+                    stream,
+                    sample_rate,
+                    host,
+                    device,
+                };
+            }
+            self.audio_device_check_timer = 0.0;
+        }
+
         // perform your game logic here
         if self.debug_btn.pressed() {
             self.render_debug_collision = !self.render_debug_collision;
@@ -719,6 +838,10 @@ impl Game for Shmup {
             self.balls.push(ball_body_handle);
         }
 
+        let mut projectiles_to_spawn = Vec::new();
+        let mut audio_emitters_to_spawn = Vec::new();
+        let mut parented_audio_emitters_to_spawn = Vec::new();
+
         if let Ok((player_entity, player, character)) =
             self.world
                 .query_one_mut::<(Entity, &mut PlayerComponent, &CharacterControllerComponent)>(
@@ -749,7 +872,7 @@ impl Game for Shmup {
                 let bullet_pos = body_translation + (player.aim_dir * bullet_spawn_dist);
                 let bullet_vel = player.aim_dir * bullet_speed;
 
-                self.world.spawn((
+                projectiles_to_spawn.push((
                     RaycastProjectile {
                         position: bullet_pos,
                         velocity: bullet_vel,
@@ -762,10 +885,44 @@ impl Game for Shmup {
                         owner: player_entity,
                     },
                 ));
+                /*                 self.world.spawn((
+                    RaycastProjectile {
+                        position: bullet_pos,
+                        velocity: bullet_vel,
+                        solid: true,
+                        life_time: 0.0,
+                        max_life_time: 5.0,
+                        penetrate: false,
+                    },
+                    PlayerOwned {
+                        owner: player_entity,
+                    },
+                )); */
+                player.shoot_2_index = self.rand.range(0..self.sound_cues["shoot2"].sounds.len());
+                //player.shoot_2_index =   inc_wrap_index(player.shoot_2_index, self.sound_cues["shoot2"].sounds.len());
+
+                spawn_sound(
+                    &mut audio_emitters_to_spawn,
+                    &mut parented_audio_emitters_to_spawn,
+                    pixel_scale_to_physics_glam(glamx::Vec2::new(
+                        self.camera.position.x,
+                        self.camera.position.y,
+                    )),
+                    glamx::Vec2::new(bullet_pos.x, bullet_pos.y),
+                    25.0,
+                    100.0,
+                    &mut self.audio,
+                    self.sounds[self.sound_cues["shoot2"].sounds[player.shoot_2_index]].clone(),
+                    None,
+                );
             } else if !player.is_shooting {
                 player.time_since_last_shot += dt;
             }
         }
+
+        self.world.spawn_batch(projectiles_to_spawn);
+        self.world.spawn_batch(audio_emitters_to_spawn);
+        self.world.spawn_batch(parented_audio_emitters_to_spawn);
 
         let _jump_height = 200.;
         let walk_speed = 10.;
@@ -936,6 +1093,8 @@ impl Game for Shmup {
                 player.aim_dir = diff.norm();
             }
         }
+
+        update_audio_emitters(&self.camera, &mut self.world, &mut to_despawn);
 
         for entity in to_despawn {
             if let Ok(character_controller) = self
@@ -1324,4 +1483,5 @@ pub struct GameConfig {
     pub default_level: String,
     pub player_walk_anim_speed: f32,
     pub merge_tiles: bool,
+    pub sound_cues: Vec<SoundCueConfig>,
 }

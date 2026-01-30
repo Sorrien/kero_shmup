@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
-use kero::{gfx::{SubTexture, Surface, Texture}, grid::GridBuf, math::Vec2F};
+use kero::{
+    gfx::{SubTexture, Surface},
+    grid::GridBuf,
+    math::Vec2F,
+};
 use rapier2d::prelude::ColliderHandle;
 
-use crate::ldtk_json::{TileInstance};
+use crate::ldtk_json::TileInstance;
 
 pub struct TileGrid {
     pub int_grid_csv: Vec<i64>,

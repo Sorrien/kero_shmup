@@ -64,6 +64,32 @@ pub fn step(physics_data: &mut PhysicsData, event_handler: &ChannelEventCollecto
     );
 }
 
+const PHYSICS_SCALE: f32 = 50.0;
+
+pub fn pixel_scale_to_physics_f(val: f32) -> f32 {
+    val / PHYSICS_SCALE
+}
+
+pub fn physics_scale_to_pixels_f(val: f32) -> f32 {
+    val * PHYSICS_SCALE
+}
+
+pub fn pixel_scale_to_physics(vec: Vec2F) -> Vec2F {
+    vec / PHYSICS_SCALE
+}
+
+pub fn physics_scale_to_pixels(vec: Vec2F) -> Vec2F {
+    vec * PHYSICS_SCALE
+}
+
+pub fn pixel_scale_to_physics_glam(vec: rapier2d::math::Vec2) -> rapier2d::math::Vec2 {
+    vec / PHYSICS_SCALE
+}
+
+pub fn physics_scale_to_pixels_glam(vec: rapier2d::math::Vec2) -> rapier2d::math::Vec2 {
+    vec * PHYSICS_SCALE
+}
+
 pub struct RigidBodyComponent {
     pub rigid_body_handle: RigidBodyHandle,
 }

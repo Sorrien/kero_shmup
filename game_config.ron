@@ -4,4 +4,14 @@ GameConfig(
     default_level: "assets/levels/PlatformerTest.ldtk",
     player_walk_anim_speed: 0.2,
     merge_tiles: true,
+    sound_cues: [
+        (
+            id: "shoot1",
+            sounds: ["assets/audio/guns/rifle/ak47_single_shot_1.ogg", "assets/audio/guns/rifle/ak47_single_shot_2.ogg"]
+        ),
+        (
+            id: "shoot2",
+            sounds: ["assets/audio/Kenny_Digital_SFX_Set/laser1.ogg", "assets/audio/Kenny_Digital_SFX_Set/laser2.ogg","assets/audio/Kenny_Digital_SFX_Set/laser3.ogg","assets/audio/Kenny_Digital_SFX_Set/laser4.ogg","assets/audio/Kenny_Digital_SFX_Set/laser5.ogg","assets/audio/Kenny_Digital_SFX_Set/laser6.ogg", ]
+        )
+    ]
 )

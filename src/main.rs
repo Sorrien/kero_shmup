@@ -13,6 +13,7 @@ fn main() -> Result<(), GameError> {
     let mut config_string = String::new();
     config_file.read_to_string(&mut config_string).unwrap();
     let config = ron::from_str::<GameConfig>(&config_string).unwrap();
+
     // create a game, set some options, and then run it
     kero::new_game()
         .with_title(&config.window_title)
