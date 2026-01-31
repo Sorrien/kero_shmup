@@ -3,7 +3,7 @@ GameConfig(
     window_title: "Shmup",
     default_level: "assets/levels/PlatformerTest.ldtk",
     player_walk_anim_speed: 0.2,
-    merge_tiles: true,
+    merge_tiles: false,
     sound_cues: [
         (
             id: "shoot1",

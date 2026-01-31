@@ -98,7 +98,7 @@ pub struct PlayerAnimComponent {
     run_index: usize,
     is_crouching: bool,
     is_jumping: bool,
-    was_grounded_last_frame: bool,
+    frames_ungrounded: u32,
     flip_x: bool,
     run_frame_time: f32,
     run_frame_time_acc: f32,
@@ -119,9 +119,9 @@ impl PlayerAnimComponent {
             run_frame_time_acc: 0.0,
             aim_angle_index: 0,
             is_muzzle_flashing: false,
-            was_grounded_last_frame: false,
             prev_anim_x: 0,
             prev_anim_y: 0,
+            frames_ungrounded: 0,
         }
     }
 }
@@ -185,11 +185,6 @@ pub struct Shmup {
     collision_recv: std::sync::mpsc::Receiver<rapier2d::prelude::CollisionEvent>,
     contact_force_recv: std::sync::mpsc::Receiver<rapier2d::prelude::ContactForceEvent>,
     cfg: GameConfig,
-    /*sound_scene_handle: oddio::SpatialSceneControl,
-         stream: cpal::Stream,
-    sample_rate: u32,
-    host: cpal::Host,
-    device: cpal::Device, */
     audio: AudioData,
     audio_device_check_timer: f32,
     audio_device_check_time: f32,
@@ -262,7 +257,10 @@ impl Game for Shmup {
         let tile_sets = ldtk.defs.tilesets;
         for tile_set in tile_sets {
             if let Some(path) = tile_set.rel_path {
-                let tile_texture = ctx.graphics.load_png_from_memory(&read_file_to_bytes(&path).unwrap(), true).unwrap();
+                let tile_texture = ctx
+                    .graphics
+                    .load_png_from_memory(&read_file_to_bytes(&path).unwrap(), true)
+                    .unwrap();
 
                 let tile_types = tile_set
                     .custom_data
@@ -604,7 +602,7 @@ impl Game for Shmup {
         ))
         .translation(rapier2d::math::Vec2::new(
             0.0,
-            pixel_scale_to_physics_f(PLAYER_HEIGHT / 2.),
+            pixel_scale_to_physics_f(PLAYER_HEIGHT / 2.) + 0.01,
         ))
         .density(0.0)
         .friction(0.0)
@@ -1266,7 +1264,12 @@ impl Game for Shmup {
 
             player_anim.is_muzzle_flashing = player.is_shooting;
 
-            if !character_controller.is_grounded && !player_anim.was_grounded_last_frame {
+            if character_controller.is_grounded {
+                player_anim.frames_ungrounded = 0;
+            } else {
+                player_anim.frames_ungrounded += 1;
+            }
+            if !character_controller.is_grounded && player_anim.frames_ungrounded > 3 {
                 player_anim.is_jumping = true;
             } else {
                 player_anim.is_jumping = false;
@@ -1347,7 +1350,6 @@ impl Game for Shmup {
                 );
             }
 
-            player_anim.was_grounded_last_frame = character_controller.is_grounded;
             player_anim.prev_anim_x = animation_x as u32 * 46;
             player_anim.prev_anim_y = animation_y;
         }
@@ -1382,6 +1384,13 @@ impl Game for Shmup {
                     character_controller.character_collider,
                     self.camera.position,
                     Rgba8::GREEN,
+                );
+                draw_physics_shape(
+                    draw,
+                    &self.physics_data,
+                    character_controller.ground_sensor_collider,
+                    self.camera.position,
+                    Rgba8::BLUE,
                 );
             }
 

@@ -59,9 +59,71 @@ pub fn step(physics_data: &mut PhysicsData, event_handler: &ChannelEventCollecto
         &mut physics_data.impulse_joint_set,
         &mut physics_data.multibody_joint_set,
         &mut physics_data.ccd_solver,
-        &(),
+        &MyPhysicsHooks,
         event_handler,
     );
+}
+
+const GHOST_COLLISION_DISTANCE: f32 = 1.0;
+struct MyPhysicsHooks;
+
+impl PhysicsHooks for MyPhysicsHooks {
+    fn modify_solver_contacts(&self, context: &mut ContactModificationContext) {
+        let Some(_collider1) = context.colliders.get(context.collider1) else {
+            return;
+        };
+        let Some(_collider2) = context.colliders.get(context.collider2) else {
+            return;
+        };
+
+        let is_rigid_body1_dynamic = if let Some(handle) = context.rigid_body1 {
+            context.bodies[handle].is_dynamic()
+        } else {
+            false
+        };
+
+        let is_rigid_body2_dynamic = if let Some(handle) = context.rigid_body2 {
+            context.bodies[handle].is_dynamic()
+        } else {
+            false
+        };
+
+        if is_rigid_body1_dynamic && !is_rigid_body2_dynamic {
+            let normal = *context.normal;
+            let body = &context.bodies[context.rigid_body1.unwrap()];
+            let lin_vel = body.linvel();
+            solve_ghost_collision(lin_vel, normal, context);
+        } else if is_rigid_body2_dynamic && !is_rigid_body1_dynamic {
+            let normal = -*context.normal;
+            let body = &context.bodies[context.rigid_body2.unwrap()];
+            let lin_vel = body.linvel();
+            solve_ghost_collision(lin_vel, normal, context);
+        }
+    }
+}
+
+#[inline]
+pub fn solve_ghost_collision(
+    lin_vel: Vec2,
+    normal: Vec2,
+    context: &mut ContactModificationContext,
+) {
+    if lin_vel.length() == 0.0 {
+        return;
+    }
+    let normal_dot_velocity = normal.dot(lin_vel.normalize());
+    let velocity_magnitude = lin_vel.length();
+    let length_along_normal = velocity_magnitude * f32::max(normal_dot_velocity, 0.0);
+    if normal_dot_velocity >= -DEFAULT_EPSILON {
+        context.solver_contacts.retain(|contact| {
+            let dist = -contact.dist;
+            let diff = dist - length_along_normal;
+            if diff < 0.5 && dist.abs() < GHOST_COLLISION_DISTANCE {
+                return false;
+            }
+            true
+        });
+    }
 }
 
 const PHYSICS_SCALE: f32 = 50.0;
