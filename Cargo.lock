@@ -331,9 +331,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.53"
+version = "1.2.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "755d2fce177175ffca841e9a06afdb2c4ab0f593d53b4dee48147dfaade85932"
+checksum = "47b26a0954ae34af09b50f0de26458fa95369a0d478d8236d3f93082b219bd29"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -719,7 +719,7 @@ dependencies = [
 [[package]]
 name = "fey_color"
 version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "approx",
  "bytemuck",
@@ -729,8 +729,8 @@ dependencies = [
 
 [[package]]
 name = "fey_font"
-version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+version = "0.1.2"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "ab_glyph",
  "fey_color",
@@ -743,7 +743,7 @@ dependencies = [
 [[package]]
 name = "fey_grid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "fey_math",
 ]
@@ -751,7 +751,7 @@ dependencies = [
 [[package]]
 name = "fey_guid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "rand",
  "serde",
@@ -760,8 +760,8 @@ dependencies = [
 
 [[package]]
 name = "fey_img"
-version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+version = "0.2.0"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "bytemuck",
  "fey_color",
@@ -776,7 +776,7 @@ dependencies = [
 [[package]]
 name = "fey_math"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "approx",
  "bytemuck",
@@ -787,7 +787,7 @@ dependencies = [
 [[package]]
 name = "fey_packer"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "fey_math",
 ]
@@ -795,7 +795,7 @@ dependencies = [
 [[package]]
 name = "fey_rand"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "fey_math",
  "rand",
@@ -805,9 +805,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8591b0bcc8a98a64310a2fae1bb3e9b8564dd10e381e6e28010fde8e8e8568db"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "flate2"
@@ -1302,8 +1302,8 @@ dependencies = [
 
 [[package]]
 name = "kero"
-version = "0.1.11"
-source = "git+https://github.com/feyworks/kero#1e59154a7422a41471826828600bd056c25bc756"
+version = "0.2.0"
+source = "git+https://github.com/feyworks/kero#ebcc2c5e2847461cc8400ddce21969e060f14038"
 dependencies = [
  "arrayvec",
  "bytemuck",
@@ -1373,9 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.15"
+version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
@@ -2278,9 +2278,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.43"
+version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc74d9a594b72ae6656596548f56f667211f8a97b3d4c3d467150794690dc40a"
+checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
 dependencies = [
  "proc-macro2",
 ]
@@ -3045,9 +3045,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
+checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
@@ -3885,18 +3885,18 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.33"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "668f5168d10b9ee831de31933dc111a459c97ec93225beb307aed970d1372dfd"
+checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.33"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7962b26b0a8685668b671ee4b54d007a67d4eaf05fda79ac0ecf41e32270f1"
+checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3905,6 +3905,6 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.16"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfcd145825aace48cff44a8844de64bf75feec3080e0aa5cdbde72961ae51a65"
+checksum = "1966f8ac2c1f76987d69a74d0e0f929241c10e78136434e3be70ff7f58f64214"

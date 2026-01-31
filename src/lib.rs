@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fs::File, io::Read};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufReader, Read},
+};
 
 use crate::{
     audio::{AudioEmitter, load_audio, setup_output_stream, spawn_sound, update_audio_emitters},
@@ -141,6 +145,14 @@ pub struct SoundCue {
     pub sounds: Vec<usize>,
 }
 
+pub fn read_file_to_bytes(path: &str) -> Result<Vec<u8>, std::io::Error> {
+    let file = File::open(path)?;
+    let mut file = BufReader::new(file);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 #[allow(unused)]
 pub struct Shmup {
     tilesets: HashMap<i64, Tileset>,
@@ -207,22 +219,34 @@ impl Game for Shmup {
 
         let player_texture = ctx
             .graphics
-            .load_png_from_file("assets/char-sheet-alpha.png", true)
+            .load_png_from_memory(
+                &read_file_to_bytes("assets/char-sheet-alpha.png").unwrap(),
+                true,
+            )
             .unwrap();
 
         let player_weapon_flash_texture = ctx
             .graphics
-            .load_png_from_file("assets/weaponflash-sheet-colour-1-alpha.png", true)
+            .load_png_from_memory(
+                &read_file_to_bytes("assets/weaponflash-sheet-colour-1-alpha.png").unwrap(),
+                true,
+            )
             .unwrap();
 
         let player_projectile_texture = ctx
             .graphics
-            .load_png_from_file("assets/projectiles-sheet-alpha.png", true)
+            .load_png_from_memory(
+                &read_file_to_bytes("assets/projectiles-sheet-alpha.png").unwrap(),
+                true,
+            )
             .unwrap();
 
         let enemies_sheet_1_texture = ctx
             .graphics
-            .load_png_from_file("assets/enemies-sheet-alpha.png", true)
+            .load_png_from_memory(
+                &read_file_to_bytes("assets/enemies-sheet-alpha.png").unwrap(),
+                true,
+            )
             .unwrap();
 
         let mut level_file = File::open(&cfg.default_level).expect("failed to open ldtk file");
@@ -238,7 +262,7 @@ impl Game for Shmup {
         let tile_sets = ldtk.defs.tilesets;
         for tile_set in tile_sets {
             if let Some(path) = tile_set.rel_path {
-                let tile_texture = ctx.graphics.load_png_from_file(path, true).unwrap();
+                let tile_texture = ctx.graphics.load_png_from_memory(&read_file_to_bytes(&path).unwrap(), true).unwrap();
 
                 let tile_types = tile_set
                     .custom_data
