@@ -1093,8 +1093,16 @@ impl Game for Shmup {
             let translation = body.position().translation;
             let translation = physics_scale_to_pixels_glam(translation);
 
-            self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
-            self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.;
+            let new_camera_position = vec2(
+                translation.x + 24.0 / 2.0 - self.camera.width / 2.,
+                translation.y + 32.0 / 2.0 - self.camera.height / 2.,
+            );
+            self.camera.position = self
+                .camera
+                .position
+                .smooth_lerp(new_camera_position, 5.0, dt);
+            /*             self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
+            self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.; */
 
             if self.use_controller {
                 let diff = Vec2F::new(self.right_stick.x(), self.right_stick.y());
