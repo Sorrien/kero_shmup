@@ -12,10 +12,12 @@ pub struct PlayerComponent {
     pub aim_dir: Vec2F,
     pub wants_to_jump: bool,
     pub shoot_2_index: usize,
+    pub controls_index: usize,
+    pub is_crouching: bool,
 }
 
 impl PlayerComponent {
-    pub fn new() -> Self {
+    pub fn new(controls_index: usize,) -> Self {
         Self {
             desired_velocity: Vec2F::ZERO,
             aim_angle: 0.0,
@@ -28,6 +30,8 @@ impl PlayerComponent {
             aim_dir: Vec2F::ZERO,
             wants_to_jump: false,
             shoot_2_index: 0,
+            controls_index,
+            is_crouching: false,
         }
     }
 }

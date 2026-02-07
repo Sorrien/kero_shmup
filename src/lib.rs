@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    f32,
     fs::File,
     io::{BufReader, Read},
 };
@@ -153,6 +154,134 @@ pub fn read_file_to_bytes(path: &str) -> Result<Vec<u8>, std::io::Error> {
     Ok(bytes)
 }
 
+#[derive(PartialEq)]
+pub enum ControlsType {
+    Keyboard,
+    Gamepad(GamepadControls),
+    None,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct GamepadControls {
+    pub down_button: VirtualButton,
+    pub jump_button: VirtualButton,
+    pub right_button: VirtualButton,
+    pub left_button: VirtualButton,
+    pub fire_button: VirtualButton,
+    pub right_stick: VirtualStick,
+    pub src: VirtualSource,
+    pub gamepad: Gamepad,
+    pub gamepad_index: usize,
+}
+
+impl GamepadControls {
+    pub fn new(ctx: &Context, gamepad: Gamepad, index: usize) -> Self {
+        let src = VirtualSource::specific(ctx, Some(gamepad.clone()));
+        let left_button = VirtualButton::new(&src, None, GamepadButton::DPadLeft);
+        let right_button = VirtualButton::new(&src, None, GamepadButton::DPadRight);
+        let down_button = VirtualButton::new(&src, None, GamepadButton::DPadDown);
+
+        let jump_button = VirtualButton::new(&src, None, GamepadButton::South);
+
+        let fire_button = VirtualButton::new(&src, None, GamepadButton::RightTrigger);
+
+        let right_stick = VirtualStick::new(
+            &src,
+            VirtualAxis::new(&src, GamepadAxis::RightX, None, None),
+            VirtualAxis::new(&src, GamepadAxis::RightY, None, None),
+        );
+        Self {
+            down_button,
+            jump_button,
+            right_button,
+            left_button,
+            fire_button,
+            right_stick,
+            src,
+            gamepad,
+            gamepad_index: index,
+        }
+    }
+
+    pub fn change_gamepad_source(&mut self, new_gamepad: Gamepad, index: usize) {
+        self.gamepad = new_gamepad;
+        self.src.set_specific(Some(self.gamepad.clone()));
+        self.gamepad_index = index;
+    }
+}
+
+pub fn spawn_player(
+    position: glamx::Vec2,
+    physics_data: &mut PhysicsData,
+    world: &mut World,
+    cfg: &GameConfig,
+    controls_index: usize,
+) -> Entity {
+    let character_body = RigidBodyBuilder::dynamic()
+        .translation(rapier2d::math::Vec2::new(
+            position.x,
+            position.y - pixel_scale_to_physics_f(PLAYER_HEIGHT - 2.),
+        ))
+        .gravity_scale(10.0)
+        .soft_ccd_prediction(10.0);
+    let character_body = physics_data.rigid_body_set.insert(character_body);
+
+    let character_collider = ColliderBuilder::capsule_y(
+        pixel_scale_to_physics_f(PLAYER_HEIGHT / 2.),
+        pixel_scale_to_physics_f(PLAYER_WIDTH / 2.),
+    )
+    .collision_groups(InteractionGroups::new(
+        PLAYER_GROUP,
+        TERRAIN_GROUP | ENEMY_GROUP | ENEMY_PROJECTILE_GROUP,
+        rapier2d::prelude::InteractionTestMode::Or,
+    ));
+    let character_collider = physics_data.collider_set.insert_with_parent(
+        character_collider,
+        character_body,
+        &mut physics_data.rigid_body_set,
+    );
+    let ground_sensor_collider = ColliderBuilder::new(SharedShape::ball(pixel_scale_to_physics_f(
+        PLAYER_WIDTH / 2.,
+    )))
+    .translation(rapier2d::math::Vec2::new(
+        0.0,
+        pixel_scale_to_physics_f(PLAYER_HEIGHT / 2.) + 0.01,
+    ))
+    .density(0.0)
+    .friction(0.0)
+    .sensor(true)
+    .collision_groups(InteractionGroups::new(
+        PLAYER_GROUP,
+        TERRAIN_GROUP | ENEMY_GROUP,
+        rapier2d::prelude::InteractionTestMode::Or,
+    ))
+    .active_events(ActiveEvents::COLLISION_EVENTS)
+    .build();
+
+    let ground_sensor_collider = physics_data.collider_set.insert_with_parent(
+        ground_sensor_collider,
+        character_body,
+        &mut physics_data.rigid_body_set,
+    );
+    let player_entity = world.spawn((
+        PlayerComponent::new(controls_index),
+        CharacterControllerComponent::new(
+            character_body,
+            character_collider,
+            false,
+            ground_sensor_collider,
+        ),
+        PlayerAnimComponent::new(cfg.player_walk_anim_speed),
+    ));
+    physics_data
+        .collider_set
+        .get_mut(character_collider)
+        .unwrap()
+        .user_data = player_entity.id() as u128;
+
+    player_entity
+}
+
 #[allow(unused)]
 pub struct Shmup {
     tilesets: HashMap<i64, Tileset>,
@@ -162,17 +291,11 @@ pub struct Shmup {
     player_start: Vec2F,
     spawn_btn: VirtualButton,
     world: World,
-    right_button: VirtualButton,
-    left_button: VirtualButton,
     player_entity: hecs::Entity,
     player_texture: Texture,
-    down_button: VirtualButton,
-    jump_button: VirtualButton,
     step_button: VirtualButton,
     camera: Camera,
     player_weapon_flash_texture: Texture,
-    fire_button: VirtualButton,
-    right_stick: VirtualStick,
     controller_switch_button: VirtualButton,
     use_controller: bool,
     player_projectile_texture: Texture,
@@ -192,6 +315,13 @@ pub struct Shmup {
     sound_metadata: Vec<audio::AudioSample>,
     sound_cues: HashMap<String, SoundCue>,
     rand: Rand,
+    _virtue_texture: Texture,
+    virtue: Font,
+    _noto_texture: Texture,
+    noto: Font,
+    player_controls: Vec<ControlsType>,
+    in_player_select_menu: bool,
+    player_select_index: usize,
 }
 
 impl Game for Shmup {
@@ -554,26 +684,17 @@ impl Game for Shmup {
             Vec2F::ZERO
         };
 
+        ctx.gamepads
+            .all()
+            .for_each(|pad| println!("{}", pad.name()));
+
+        //let keyboard_mouse_src = VirtualSource::specific(ctx, Some(ctx.keyboard));
         let src = VirtualSource::last_active(ctx);
         let spawn_btn = VirtualButton::new(&src, Key::Period, None);
         let debug_btn = VirtualButton::new(&src, Key::Comma, None);
         let step_button = VirtualButton::new(&src, Key::P, None);
         let pause_btn = VirtualButton::new(&src, Key::L, None);
-
-        let left_button = VirtualButton::new(&src, Key::A, GamepadButton::DPadLeft);
-        let right_button = VirtualButton::new(&src, Key::D, GamepadButton::DPadRight);
-        let down_button = VirtualButton::new(&src, Key::S, GamepadButton::DPadDown);
-
-        let jump_button = VirtualButton::new(&src, Key::Space, GamepadButton::South);
-
-        let fire_button = VirtualButton::new(&src, Key::F, GamepadButton::RightTrigger);
-
-        let right_stick = VirtualStick::new(
-            &src,
-            VirtualAxis::new(&src, GamepadAxis::RightX, None, None),
-            VirtualAxis::new(&src, GamepadAxis::RightY, None, None),
-        );
-
+        /*
         let character_body = RigidBodyBuilder::dynamic()
             .translation(pixel_scale_to_physics_glam(rapier2d::math::Vec2::new(
                 player_start.x,
@@ -621,7 +742,7 @@ impl Game for Shmup {
             &mut physics_data.rigid_body_set,
         );
         let player_entity = world.spawn((
-            PlayerComponent::new(),
+            PlayerComponent::new(0),
             CharacterControllerComponent::new(
                 character_body,
                 character_collider,
@@ -634,7 +755,15 @@ impl Game for Shmup {
             .collider_set
             .get_mut(character_collider)
             .unwrap()
-            .user_data = player_entity.id() as u128;
+            .user_data = player_entity.id() as u128; */
+
+        let player_entity = spawn_player(
+            pixel_scale_to_physics_glam(glamx::Vec2::new(player_start.x, player_start.y)),
+            &mut physics_data,
+            &mut world,
+            &cfg,
+            0,
+        );
 
         let zoom_amount = 1.;
 
@@ -720,6 +849,26 @@ impl Game for Shmup {
 
         let rand = kero::rand::Rand::new();
 
+        // load a smooth font
+        let (noto, _noto_texture) = Font::from_ttf_bytes(
+            &ctx.graphics,
+            include_bytes!("../assets/fonts/NotoSans-Regular.ttf"),
+            32.0,
+            false,
+            BASIC_LATIN,
+        )?
+        .ok_or_else(|| GameError::custom("failed to load font"))?;
+
+        // load a pixelated font
+        let (virtue, _virtue_texture) = Font::from_ttf_bytes(
+            &ctx.graphics,
+            include_bytes!("../assets/fonts/virtue.ttf"),
+            16.0,
+            true,
+            BASIC_LATIN,
+        )?
+        .ok_or_else(|| GameError::custom("failed to load font"))?;
+
         Ok(Self {
             tilesets,
             grids,
@@ -728,14 +877,8 @@ impl Game for Shmup {
             player_start,
             spawn_btn,
             world,
-            left_button,
-            right_button,
-            down_button,
-            jump_button,
-            fire_button,
             controller_switch_button: VirtualButton::new(&src, Key::O, None),
             use_controller: false,
-            right_stick,
             player_entity,
             player_texture,
             camera: Camera::new(
@@ -763,6 +906,13 @@ impl Game for Shmup {
             sound_metadata,
             sound_cues,
             rand,
+            noto,
+            _noto_texture,
+            virtue,
+            _virtue_texture,
+            player_controls: vec![ControlsType::Keyboard],
+            in_player_select_menu: false,
+            player_select_index: 0,
         })
     }
 
@@ -784,6 +934,35 @@ impl Game for Shmup {
             self.audio_device_check_timer = 0.0;
         }
 
+        for controller in &mut self.player_controls {
+            match controller {
+                ControlsType::Keyboard => {}
+                ControlsType::Gamepad(gamepad_controls) => {
+                    if !gamepad_controls.gamepad.was_connected() {
+                        println!(
+                            "attempting reconnect of gamepad {}",
+                            gamepad_controls.gamepad_index
+                        );
+                        let gamepads = ctx.gamepads.all().collect::<Vec<_>>();
+                        if gamepads.len() > gamepad_controls.gamepad_index {
+                            println!(
+                                "attempting reconnect of gamepad {}",
+                                gamepad_controls.gamepad_index
+                            );
+                            gamepad_controls.change_gamepad_source(
+                                gamepads[gamepad_controls.gamepad_index].clone(),
+                                gamepad_controls.gamepad_index,
+                            );
+                        }
+                    }
+                    else {
+                        println!("gamepad was connected: {}",gamepad_controls.gamepad_index);
+                    }
+                }
+                ControlsType::None => (),
+            }
+        }
+
         // perform your game logic here
         if self.debug_btn.pressed() {
             self.render_debug_collision = !self.render_debug_collision;
@@ -791,6 +970,142 @@ impl Game for Shmup {
         if self.pause_btn.pressed() {
             self.pause = !self.pause;
         }
+
+        if ctx.keyboard.pressed(Key::Escape) {
+            if self.in_player_select_menu {
+                let empty_controls_count = self
+                    .player_controls
+                    .iter()
+                    .filter(|controls| **controls == ControlsType::None)
+                    .count();
+
+                if empty_controls_count == 0 {
+                    let player_needs_spawn = self
+                        .player_controls
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| {
+                            let mut has_player = false;
+                            for player in &mut self.world.query::<&mut PlayerComponent>() {
+                                if player.controls_index == *i {
+                                    has_player = true;
+                                    break;
+                                }
+                            }
+                            !has_player
+                        })
+                        .collect::<Vec<_>>();
+
+                    let mut position = glamx::Vec2::new(0., 0.);
+                    for (controller, _) in &mut self
+                        .world
+                        .query::<(&CharacterControllerComponent, &PlayerComponent)>()
+                    {
+                        position = self.physics_data.rigid_body_set[controller.character_body]
+                            .translation();
+                        break;
+                    }
+
+                    for (i, _) in player_needs_spawn {
+                        spawn_player(
+                            position,
+                            &mut self.physics_data,
+                            &mut self.world,
+                            &self.cfg,
+                            i,
+                        );
+                    }
+
+                    self.in_player_select_menu = false;
+                    self.pause = false;
+                }
+            } else {
+                self.pause = true;
+                self.in_player_select_menu = true;
+            }
+        }
+
+        if self.in_player_select_menu {
+            if ctx.keyboard.pressed(Key::D) {
+                self.player_select_index = wrap_index_neg(
+                    (self.player_select_index + 1) as i32,
+                    self.player_controls.len(),
+                );
+            }
+            if ctx.keyboard.pressed(Key::A) {
+                self.player_select_index = wrap_index_neg(
+                    (self.player_select_index - 1) as i32,
+                    self.player_controls.len(),
+                );
+            }
+            let mut change_controls = false;
+            let mut change_forward = false;
+            if ctx.keyboard.pressed(Key::C) {
+                change_controls = true;
+            }
+
+            if ctx.keyboard.pressed(Key::V) {
+                change_controls = true;
+                change_forward = true;
+            }
+            if change_controls {
+                match &mut self.player_controls[self.player_select_index] {
+                    ControlsType::Keyboard => {
+                        if change_forward {
+                            let gamepad = ctx.gamepads.all().next();
+                            if let Some(gamepad) = gamepad {
+                                self.player_controls[self.player_select_index] =
+                                    ControlsType::Gamepad(GamepadControls::new(ctx, gamepad, 0));
+                            }
+                        } else {
+                            self.player_controls[self.player_select_index] = ControlsType::None;
+                        }
+                    }
+                    ControlsType::Gamepad(gamepad_controls) => {
+                        let inc = if change_forward { 1 } else { -1 };
+                        let gamepads = ctx.gamepads.all().collect::<Vec<_>>();
+                        let (gamepad_index, _) = gamepads
+                            .iter()
+                            .enumerate()
+                            .find(|(_, gamepad)| **gamepad == gamepad_controls.gamepad)
+                            .unwrap();
+
+                        let new_index = gamepad_index as i32 + inc;
+                        if new_index < 0 {
+                            self.player_controls[self.player_select_index] = ControlsType::Keyboard;
+                        } else if new_index as usize >= gamepads.len() {
+                            self.player_controls[self.player_select_index] = ControlsType::None;
+                        } else {
+                            let new_gamepad = gamepads[new_index as usize].clone();
+                            gamepad_controls.change_gamepad_source(new_gamepad, new_index as usize);
+                        }
+                    }
+                    ControlsType::None => {
+                        if change_forward {
+                            self.player_controls[self.player_select_index] = ControlsType::Keyboard;
+                        } else {
+                            let gamepad = ctx.gamepads.all().last();
+                            if let Some(gamepad) = gamepad {
+                                self.player_controls[self.player_select_index] =
+                                    ControlsType::Gamepad(GamepadControls::new(
+                                        ctx,
+                                        gamepad,
+                                        ctx.gamepads.all().count() - 1,
+                                    ));
+                            } else {
+                                self.player_controls[self.player_select_index] =
+                                    ControlsType::Keyboard;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ctx.keyboard.pressed(Key::N) {
+                self.player_controls.push(ControlsType::None);
+            }
+        }
+
         if self.pause {
             if self.step_button.pressed() {
             } else {
@@ -798,31 +1113,59 @@ impl Game for Shmup {
             }
         }
 
+        if self.controller_switch_button.pressed() {
+            self.use_controller = !self.use_controller;
+        }
+
         //update inputs
-        if let Ok(player) = self
-            .world
-            .query_one_mut::<&mut PlayerComponent>(self.player_entity)
-        {
+        for player in self.world.query_mut::<&mut PlayerComponent>() {
             let mut x = 0.0;
-            if self.right_button.down() {
-                x += 1.0;
+            let player_controls = &self.player_controls[player.controls_index];
+            match player_controls {
+                ControlsType::Keyboard => {
+                    if ctx.keyboard.down(Key::D) {
+                        x += 1.0;
+                    }
+                    if ctx.keyboard.down(Key::A) {
+                        x -= 1.0;
+                    }
+
+                    if ctx.mouse.left_down() {
+                        player.wants_to_shoot = true;
+                    } else {
+                        player.wants_to_shoot = false;
+                    }
+
+                    if ctx.keyboard.pressed(Key::Space) {
+                        player.wants_to_jump = true;
+                    } else if ctx.keyboard.released(Key::Space) {
+                        player.wants_to_jump = false;
+                    }
+                }
+                ControlsType::Gamepad(gamepad_controls) => {
+                    if gamepad_controls.right_button.down() {
+                        x += 1.0;
+                    }
+                    if gamepad_controls.left_button.down() {
+                        x -= 1.0;
+                    }
+
+                    if gamepad_controls.fire_button.down() {
+                        player.wants_to_shoot = true;
+                    } else {
+                        player.wants_to_shoot = false;
+                    }
+
+                    if gamepad_controls.jump_button.pressed() {
+                        player.wants_to_jump = true;
+                    } else if gamepad_controls.jump_button.released() {
+                        player.wants_to_jump = false;
+                    }
+                }
+                ControlsType::None => (),
             }
-            if self.left_button.down() {
-                x -= 1.0;
-            }
+
             player.desired_velocity.x = x;
-
-            if self.fire_button.down() || ctx.mouse.left_down() {
-                player.wants_to_shoot = true;
-            } else {
-                player.wants_to_shoot = false;
-            }
-
-            if self.jump_button.pressed() {
-                player.wants_to_jump = true;
-            } else if self.jump_button.released() {
-                player.wants_to_jump = false;
-            }
         }
 
         let dt = ctx.dt();
@@ -834,10 +1177,6 @@ impl Game for Shmup {
         self.camera.height = window_size.y;
 
         let mouse_world_pos = to_logical_f(ctx.mouse.pos(), scale) + self.camera.position;
-
-        if self.controller_switch_button.pressed() {
-            self.use_controller = !self.use_controller;
-        }
 
         if self.spawn_btn.pressed() {
             let rigid_body = RigidBodyBuilder::dynamic()
@@ -864,11 +1203,9 @@ impl Game for Shmup {
         let mut audio_emitters_to_spawn = Vec::new();
         let mut parented_audio_emitters_to_spawn = Vec::new();
 
-        if let Ok((player_entity, player, character)) =
+        for (player_entity, player, character) in
             self.world
-                .query_one_mut::<(Entity, &mut PlayerComponent, &CharacterControllerComponent)>(
-                    self.player_entity,
-                )
+                .query_mut::<(Entity, &mut PlayerComponent, &CharacterControllerComponent)>()
         {
             if player.is_shooting && player.time_since_shot_start >= player.time_per_shot {
                 player.is_shooting = false;
@@ -1085,44 +1422,76 @@ impl Game for Shmup {
             to_despawn.push(hit_entity);
         }
 
+        let mut camera_aabb_min = glamx::Vec2::new(f32::MAX, f32::MAX);
+        let mut camera_aabb_max = glamx::Vec2::new(f32::MIN, f32::MIN);
+
         for (player, character_controller) in self
             .world
             .query_mut::<(&mut PlayerComponent, &mut CharacterControllerComponent)>()
         {
+            //todo: handle camera for whole group instead of updating in this loop individually.
             let body = &self.physics_data.rigid_body_set[character_controller.character_body];
             let translation = body.position().translation;
             let translation = physics_scale_to_pixels_glam(translation);
 
-            let new_camera_position = vec2(
-                translation.x + 24.0 / 2.0 - self.camera.width / 2.,
-                translation.y + 32.0 / 2.0 - self.camera.height / 2.,
-            );
-            self.camera.position = self
-                .camera
-                .position
-                .smooth_lerp(new_camera_position, 5.0, dt);
+            if camera_aabb_min.x > translation.x {
+                camera_aabb_min.x = translation.x;
+            }
+            if camera_aabb_min.y > translation.y {
+                camera_aabb_min.y = translation.y;
+            }
+            if camera_aabb_max.x < translation.x {
+                camera_aabb_max.x = translation.x;
+            }
+            if camera_aabb_max.y < translation.y {
+                camera_aabb_max.y = translation.y;
+            }
             /*             self.camera.position.x = translation.x + 24.0 / 2.0 - self.camera.width / 2.;
             self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.; */
 
-            if self.use_controller {
-                let diff = Vec2F::new(self.right_stick.x(), self.right_stick.y());
-                let mut angle = f32::atan2(diff.y, diff.x);
-                if angle < 0. {
-                    angle += f32::PI * 2.;
+            let player_controls = &self.player_controls[player.controls_index];
+            match player_controls {
+                ControlsType::Keyboard => {
+                    let body_pos = Vec2F::new(translation.x, translation.y);
+                    let diff = mouse_world_pos - body_pos;
+                    let mut angle = f32::atan2(diff.y, diff.x);
+                    if angle < 0. {
+                        angle += f32::PI * 2.;
+                    }
+                    player.aim_angle = angle * (180. / f32::PI);
+                    player.aim_dir = diff.norm();
                 }
-                player.aim_angle = angle * (180. / f32::PI);
-                player.aim_dir = diff.norm();
-            } else {
-                let body_pos = Vec2F::new(translation.x, translation.y);
-                let diff = mouse_world_pos - body_pos;
-                let mut angle = f32::atan2(diff.y, diff.x);
-                if angle < 0. {
-                    angle += f32::PI * 2.;
+                ControlsType::Gamepad(gamepad_controls) => {
+                    let diff = Vec2F::new(
+                        gamepad_controls.right_stick.x(),
+                        gamepad_controls.right_stick.y(),
+                    );
+                    let mut angle = f32::atan2(diff.y, diff.x);
+                    if angle < 0. {
+                        angle += f32::PI * 2.;
+                    }
+                    player.aim_angle = angle * (180. / f32::PI);
+                    player.aim_dir = diff.norm();
                 }
-                player.aim_angle = angle * (180. / f32::PI);
-                player.aim_dir = diff.norm();
+                ControlsType::None => (),
             }
         }
+        let bounding_box_length = glamx::Vec2::new(
+            (camera_aabb_min.x - camera_aabb_max.x).abs(),
+            (camera_aabb_min.y - camera_aabb_max.y).abs(),
+        );
+        let scene_center = camera_aabb_min + bounding_box_length;
+        /*         if bounding_box_length.x / bounding_box_length.y > self.camera.width / self.camera.height {
+            self.camera.zoom_amount = (self.camera.width / bounding_box_length.x) / 1.0;
+        } */
+        let new_camera_position = vec2(
+            (scene_center.x + 24.0) / 2.0 - self.camera.width / 2.,
+            (scene_center.y + 32.0) / 2.0 - self.camera.height / 2.,
+        );
+        self.camera.position = self
+            .camera
+            .position
+            .smooth_lerp(new_camera_position, 5.0, dt);
 
         update_audio_emitters(&self.camera, &mut self.world, &mut to_despawn);
 
@@ -1189,7 +1558,7 @@ impl Game for Shmup {
         }
 
         // draw a background color to the window
-        draw.set_surface(None, rgb(0x476c6c));
+        draw.set_surface(None, hex(0x476c6c));
 
         let scale = self.camera.zoom_amount * 2.0 * ctx.window.scale_factor();
 
@@ -1219,7 +1588,6 @@ impl Game for Shmup {
             let flip_y = projectile.velocity.y > 0.;
 
             let diff = projectile.velocity.norm();
-            Vec2F::new(self.right_stick.x(), self.right_stick.y());
             let mut angle = f32::atan2(diff.y, diff.x);
             if angle < 0. {
                 angle += f32::PI * 2.;
@@ -1282,11 +1650,7 @@ impl Game for Shmup {
             } else {
                 player_anim.is_jumping = false;
             }
-            if self.down_button.pressed() {
-                player_anim.is_crouching = true;
-            } else if self.down_button.released() {
-                player_anim.is_crouching = false;
-            }
+            player_anim.is_crouching = player.is_crouching;
 
             let is_running = player.desired_velocity.x.abs() > 0.;
 
@@ -1415,11 +1779,41 @@ impl Game for Shmup {
             }
         }
 
-        draw.circle(
-            circle(to_logical_f(ctx.mouse.pos(), scale), 5.),
-            Rgba8::RED,
-            None,
-        );
+        if self.player_controls.contains(&ControlsType::Keyboard) {
+            draw.circle(
+                circle(to_logical_f(ctx.mouse.pos(), scale), 5.),
+                Rgba8::RED,
+                None,
+            );
+        }
+
+        if self.in_player_select_menu {
+            for (i, player_controls) in self.player_controls.iter().enumerate() {
+                let player_controls_string = match player_controls {
+                    ControlsType::Keyboard => "Keyboard",
+                    ControlsType::Gamepad(gamepad_controls) => &format!(
+                        "Gamepad {} {}",
+                        gamepad_controls.gamepad.name(),
+                        gamepad_controls.gamepad_index
+                    ),
+                    ControlsType::None => "None",
+                };
+                let is_selected = i == self.player_select_index;
+                let size = if is_selected { 22. } else { 20. };
+                let color = if is_selected {
+                    Rgba8::WHEAT
+                } else {
+                    Rgba8::WHITE
+                };
+                draw.text(
+                    &format!("Player {} Controls: {}", i + 1, player_controls_string),
+                    vec2(10., i as f32 * 20. + 10.),
+                    &self.virtue,
+                    color,
+                    size,
+                );
+            }
+        }
 
         Ok(())
     }
@@ -1509,6 +1903,10 @@ pub fn draw_physics_shape(
 
 pub fn inc_wrap_index(index: usize, len: usize) -> usize {
     (index + 1) % len
+}
+
+pub fn wrap_index_neg(index: i32, len: usize) -> usize {
+    (((index % len as i32) + len as i32) % len as i32) as usize
 }
 
 pub struct MinMax {
