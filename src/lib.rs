@@ -6,8 +6,7 @@ use std::{
 };
 
 use crate::{
-    audio::{AudioEmitter, load_audio, setup_output_stream, spawn_sound, update_audio_emitters},
-    hierarchy::TransformComponent,
+    audio::{load_audio, setup_output_stream, spawn_sound, update_audio_emitters},
     ldtk::{TileGrid, TileType, Tileset},
     ldtk_json::LdtkJson,
     physics::{
@@ -18,7 +17,6 @@ use crate::{
     player::PlayerComponent,
 };
 use cpal::traits::{DeviceTrait, HostTrait};
-use glamx::Affine2;
 use hecs::{Entity, World};
 use kero::{grid::Grid, prelude::*};
 use rapier2d::prelude::{
@@ -171,11 +169,10 @@ pub struct GamepadControls {
     pub right_stick: VirtualStick,
     pub src: VirtualSource,
     pub gamepad: Gamepad,
-    pub gamepad_index: usize,
 }
 
 impl GamepadControls {
-    pub fn new(ctx: &Context, gamepad: Gamepad, index: usize) -> Self {
+    pub fn new(ctx: &Context, gamepad: Gamepad) -> Self {
         let src = VirtualSource::specific(ctx, Some(gamepad.clone()));
         let left_button = VirtualButton::new(&src, None, GamepadButton::DPadLeft);
         let right_button = VirtualButton::new(&src, None, GamepadButton::DPadRight);
@@ -199,14 +196,12 @@ impl GamepadControls {
             right_stick,
             src,
             gamepad,
-            gamepad_index: index,
         }
     }
 
-    pub fn change_gamepad_source(&mut self, new_gamepad: Gamepad, index: usize) {
+    pub fn change_gamepad_source(&mut self, new_gamepad: Gamepad) {
         self.gamepad = new_gamepad;
         self.src.set_specific(Some(self.gamepad.clone()));
-        self.gamepad_index = index;
     }
 }
 
@@ -939,24 +934,13 @@ impl Game for Shmup {
                 ControlsType::Keyboard => {}
                 ControlsType::Gamepad(gamepad_controls) => {
                     if !gamepad_controls.gamepad.was_connected() {
-                        println!(
-                            "attempting reconnect of gamepad {}",
-                            gamepad_controls.gamepad_index
-                        );
-                        let gamepads = ctx.gamepads.all().collect::<Vec<_>>();
-                        if gamepads.len() > gamepad_controls.gamepad_index {
-                            println!(
-                                "attempting reconnect of gamepad {}",
-                                gamepad_controls.gamepad_index
-                            );
-                            gamepad_controls.change_gamepad_source(
-                                gamepads[gamepad_controls.gamepad_index].clone(),
-                                gamepad_controls.gamepad_index,
-                            );
+                        let new_gamepad = ctx
+                            .gamepads
+                            .all()
+                            .find(|pad| pad.id() == gamepad_controls.gamepad.id());
+                        if let Some(new_gamepad) = new_gamepad {
+                            gamepad_controls.change_gamepad_source(new_gamepad.clone());
                         }
-                    }
-                    else {
-                        println!("gamepad was connected: {}",gamepad_controls.gamepad_index);
                     }
                 }
                 ControlsType::None => (),
@@ -1049,13 +1033,18 @@ impl Game for Shmup {
                 change_forward = true;
             }
             if change_controls {
+                let mut gamepads = ctx.gamepads.all().collect::<Vec<_>>();
+                gamepads.sort_by(|a, b| (*a.id()).to_string().cmp(&b.id().to_string()));
                 match &mut self.player_controls[self.player_select_index] {
                     ControlsType::Keyboard => {
                         if change_forward {
-                            let gamepad = ctx.gamepads.all().next();
+                            let gamepad = gamepads.first();
                             if let Some(gamepad) = gamepad {
                                 self.player_controls[self.player_select_index] =
-                                    ControlsType::Gamepad(GamepadControls::new(ctx, gamepad, 0));
+                                    ControlsType::Gamepad(GamepadControls::new(
+                                        ctx,
+                                        gamepad.clone(),
+                                    ));
                             }
                         } else {
                             self.player_controls[self.player_select_index] = ControlsType::None;
@@ -1063,11 +1052,11 @@ impl Game for Shmup {
                     }
                     ControlsType::Gamepad(gamepad_controls) => {
                         let inc = if change_forward { 1 } else { -1 };
-                        let gamepads = ctx.gamepads.all().collect::<Vec<_>>();
+
                         let (gamepad_index, _) = gamepads
                             .iter()
                             .enumerate()
-                            .find(|(_, gamepad)| **gamepad == gamepad_controls.gamepad)
+                            .find(|(_, gamepad)| gamepad.id() == gamepad_controls.gamepad.id())
                             .unwrap();
 
                         let new_index = gamepad_index as i32 + inc;
@@ -1077,20 +1066,19 @@ impl Game for Shmup {
                             self.player_controls[self.player_select_index] = ControlsType::None;
                         } else {
                             let new_gamepad = gamepads[new_index as usize].clone();
-                            gamepad_controls.change_gamepad_source(new_gamepad, new_index as usize);
+                            gamepad_controls.change_gamepad_source(new_gamepad);
                         }
                     }
                     ControlsType::None => {
                         if change_forward {
                             self.player_controls[self.player_select_index] = ControlsType::Keyboard;
                         } else {
-                            let gamepad = ctx.gamepads.all().last();
+                            let gamepad = gamepads.last();
                             if let Some(gamepad) = gamepad {
                                 self.player_controls[self.player_select_index] =
                                     ControlsType::Gamepad(GamepadControls::new(
                                         ctx,
-                                        gamepad,
-                                        ctx.gamepads.all().count() - 1,
+                                        gamepad.clone(),
                                     ));
                             } else {
                                 self.player_controls[self.player_select_index] =
@@ -1450,30 +1438,28 @@ impl Game for Shmup {
             self.camera.position.y = translation.y + 32.0 / 2.0 - self.camera.height / 2.; */
 
             let player_controls = &self.player_controls[player.controls_index];
-            match player_controls {
+            let diff = match player_controls {
                 ControlsType::Keyboard => {
                     let body_pos = Vec2F::new(translation.x, translation.y);
-                    let diff = mouse_world_pos - body_pos;
-                    let mut angle = f32::atan2(diff.y, diff.x);
-                    if angle < 0. {
-                        angle += f32::PI * 2.;
-                    }
-                    player.aim_angle = angle * (180. / f32::PI);
-                    player.aim_dir = diff.norm();
+                    mouse_world_pos - body_pos
                 }
-                ControlsType::Gamepad(gamepad_controls) => {
-                    let diff = Vec2F::new(
-                        gamepad_controls.right_stick.x(),
-                        gamepad_controls.right_stick.y(),
-                    );
-                    let mut angle = f32::atan2(diff.y, diff.x);
-                    if angle < 0. {
-                        angle += f32::PI * 2.;
-                    }
-                    player.aim_angle = angle * (180. / f32::PI);
-                    player.aim_dir = diff.norm();
+                ControlsType::Gamepad(gamepad_controls) => Vec2F::new(
+                    gamepad_controls.right_stick.x(),
+                    gamepad_controls.right_stick.y(),
+                ),
+                ControlsType::None => Vec2F::ZERO,
+            };
+
+            if diff == Vec2F::ZERO {
+                player.aim_dir = Vec2F::new(1.0, 0.);
+                player.aim_angle = 360.0;
+            } else {
+                let mut angle = f32::atan2(diff.y, diff.x);
+                if angle < 0. {
+                    angle += f32::PI * 2.;
                 }
-                ControlsType::None => (),
+                player.aim_angle = angle * (180. / f32::PI);
+                player.aim_dir = diff.norm();
             }
         }
         let bounding_box_length = glamx::Vec2::new(
@@ -1794,7 +1780,7 @@ impl Game for Shmup {
                     ControlsType::Gamepad(gamepad_controls) => &format!(
                         "Gamepad {} {}",
                         gamepad_controls.gamepad.name(),
-                        gamepad_controls.gamepad_index
+                        gamepad_controls.gamepad.id(),
                     ),
                     ControlsType::None => "None",
                 };

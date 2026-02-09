@@ -719,7 +719,6 @@ dependencies = [
 [[package]]
 name = "fey_color"
 version = "0.1.1"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "approx",
  "bytemuck",
@@ -730,7 +729,6 @@ dependencies = [
 [[package]]
 name = "fey_font"
 version = "0.1.2"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "ab_glyph",
  "fey_color",
@@ -743,7 +741,6 @@ dependencies = [
 [[package]]
 name = "fey_grid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "fey_math",
 ]
@@ -751,7 +748,6 @@ dependencies = [
 [[package]]
 name = "fey_guid"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "rand",
  "serde",
@@ -761,7 +757,6 @@ dependencies = [
 [[package]]
 name = "fey_img"
 version = "0.2.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "bytemuck",
  "fey_color",
@@ -776,7 +771,6 @@ dependencies = [
 [[package]]
 name = "fey_math"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "approx",
  "bytemuck",
@@ -787,7 +781,6 @@ dependencies = [
 [[package]]
 name = "fey_packer"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "fey_math",
 ]
@@ -795,7 +788,6 @@ dependencies = [
 [[package]]
 name = "fey_rand"
 version = "0.1.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "fey_math",
  "rand",
@@ -1303,7 +1295,6 @@ dependencies = [
 [[package]]
 name = "kero"
 version = "0.2.0"
-source = "git+https://github.com/feyworks/kero#889ee08f4e8a46db8e73add49499f5cfaed8a428"
 dependencies = [
  "arrayvec",
  "bytemuck",
